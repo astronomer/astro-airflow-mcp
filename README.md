@@ -1,3 +1,7 @@
+<p align="center">
+  <img width="404" height="276" alt="ChatGPT Image Dec 2, 2025, 06_23_58 PM" src="https://github.com/user-attachments/assets/04c67138-c187-44d4-a202-bb79bd631fc5" />
+</p>
+
 # Airflow MCP Server
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Apache Airflow that provides AI assistants (like Claude, Cursor, etc.) with access to Airflow's REST API. Built with [FastMCP](https://github.com/jlowin/fastmcp).
