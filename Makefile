@@ -1,6 +1,6 @@
 # Makefile for airflow-mcp development
-#
-.PHONY: help install install-dev install-hooks run docker-build docker-run test lint format type-check security check clean pre-commit
+
+.PHONY: help install install-dev install-dev-ci install-hooks run docker-build docker-run test lint format type-check security check clean pre-commit
 
 help:  ## Show this help message
 	@echo "Available commands:"
@@ -9,8 +9,12 @@ help:  ## Show this help message
 install:  ## Install the package
 	uv pip install -e .
 
-install-dev:  ## Install the package with dev dependencies
-	uv sync --extra plugin --dev
+install-dev:  ## Install the package with dev dependencies (local)
+	uv sync --all-extras
+
+install-dev-ci:  ## Install the package with dev dependencies (CI - system Python)
+	uv pip install --system -e ".[plugin]"
+	uv pip install --system pytest ruff pre-commit mypy bandit[toml] types-requests
 
 install-hooks:  ## Install pre-commit hooks
 	pre-commit install

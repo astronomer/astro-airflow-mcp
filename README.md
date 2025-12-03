@@ -4,6 +4,10 @@
 
 # Airflow MCP Server
 
+[![CI](https://github.com/YOUR_USERNAME/airflow-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/airflow-mcp/actions/workflows/ci.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Apache Airflow that provides AI assistants (like Claude, Cursor, etc.) with access to Airflow's REST API. Built with [FastMCP](https://github.com/jlowin/fastmcp).
 
 ## Features
