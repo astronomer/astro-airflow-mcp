@@ -26,6 +26,8 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Ap
 
 ### Standalone Mode
 
+#### Option 1: Local Installation
+
 Install the package:
 
 ```bash
@@ -33,6 +35,28 @@ pip install -e .
 # or with uv
 uv pip install -e .
 ```
+
+#### Option 2: Docker
+
+Build and run with Docker:
+
+```bash
+# Build the image
+docker build -t airflow-mcp .
+
+# Run with stdio transport (default)
+docker run -e AIRFLOW_API_URL=http://host.docker.internal:8080 \
+           -e AIRFLOW_AUTH_TOKEN=your_token \
+           airflow-mcp
+
+# Run with HTTP transport
+docker run -p 8000:8000 \
+           -e AIRFLOW_API_URL=http://host.docker.internal:8080 \
+           airflow-mcp \
+           python -m airflow_mcp --transport http --host 0.0.0.0 --port 8000
+```
+
+**Note**: Use `host.docker.internal` to access services running on your host machine from within Docker (eg: `astro dev start`).
 
 ### Airflow Plugin Mode
 
