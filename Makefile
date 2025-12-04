@@ -1,6 +1,6 @@
 # Makefile for airflow-mcp development
 
-.PHONY: help install install-dev install-dev-ci install-hooks run docker-build docker-run test lint format type-check security check clean pre-commit
+.PHONY: help install install-dev install-dev-ci install-hooks run docker-build docker-run build test lint format type-check security check clean pre-commit
 
 help:  ## Show this help message
 	@echo "Available commands:"
@@ -32,6 +32,9 @@ docker-run:  ## Run Docker container with HTTP transport
 		-e AIRFLOW_API_URL=http://host.docker.internal:8080 \
 		airflow-mcp \
 		python -m airflow_mcp --transport http --host 0.0.0.0 --port 8000
+
+build:  ## Build distribution packages (wheel and sdist)
+	uv build
 
 test:  ## Run tests
 	PYTHONPATH=src uv run pytest
