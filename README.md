@@ -221,6 +221,18 @@ Configure in Cursor's MCP settings:
 }
 ```
 
+**Or point to the standaone endpoint**:
+
+```json
+{
+  "mcpServers": {
+    "airflow": {
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+
 **Or point to the plugin endpoint**:
 
 ```json
