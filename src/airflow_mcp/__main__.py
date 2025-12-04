@@ -5,7 +5,9 @@ import os
 
 from airflow_mcp.server import configure, mcp
 
-if __name__ == "__main__":
+
+def main():
+    """Main entry point for the Airflow MCP server."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Airflow MCP Server")
     parser.add_argument(
@@ -78,3 +80,7 @@ if __name__ == "__main__":
         print("Starting Airflow MCP Server in stdio mode")
         print(f"Airflow URL: {args.airflow_url}")
         mcp.run()
+
+
+if __name__ == "__main__":
+    main()

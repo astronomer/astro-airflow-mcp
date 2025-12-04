@@ -35,12 +35,24 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Ap
 Install the package:
 
 ```bash
-pip install -e .
-# or with uv
+make install
+# or directly with uv
 uv pip install -e .
 ```
 
-#### Option 2: Docker
+#### Option 2: CLI Tool Installation
+
+Install as a system-wide CLI tool:
+
+```bash
+make install-tool
+# or directly with uv
+uv tool install -e .
+```
+
+This makes the `airflow-mcp` command available globally on your system.
+
+#### Option 3: Docker
 
 Build and run with Docker:
 
@@ -143,6 +155,24 @@ The plugin automatically integrates with Airflow 3.x when installed.
 
 Add to your Claude Desktop configuration:
 
+**If installed as CLI tool** (recommended):
+
+```json
+{
+  "mcpServers": {
+    "airflow": {
+      "command": "airflow-mcp",
+      "env": {
+        "AIRFLOW_API_URL": "http://localhost:8080",
+        "AIRFLOW_AUTH_TOKEN": "your_token"
+      }
+    }
+  }
+}
+```
+
+**If installed with pip/uv (local install)**:
+
 ```json
 {
   "mcpServers": {
@@ -162,6 +192,20 @@ Add to your Claude Desktop configuration:
 
 Configure in Cursor's MCP settings:
 
+**If installed as CLI tool** (recommended):
+
+```json
+{
+  "mcpServers": {
+    "airflow": {
+      "command": "airflow-mcp"
+    }
+  }
+}
+```
+
+**If installed with pip/uv (local install)**:
+
 ```json
 {
   "mcpServers": {
@@ -173,7 +217,7 @@ Configure in Cursor's MCP settings:
 }
 ```
 
-Or point to the plugin endpoint:
+**Or point to the plugin endpoint**:
 
 ```json
 {

@@ -9,6 +9,9 @@ help:  ## Show this help message
 install:  ## Install the package
 	uv pip install -e .
 
+install-tool:  ## Install as a system-wide CLI tool
+	uv tool install -e .
+
 install-dev:  ## Install the package with dev dependencies (local)
 	uv sync --all-extras
 
@@ -21,8 +24,8 @@ install-hooks:  ## Install pre-commit hooks
 	pre-commit install
 	@echo "✓ Pre-commit hooks installed"
 
-run:  ## Run the MCP server in standalone mode
-	uv run python -m airflow_mcp
+run:  ## Run the MCP server in standalone mode (HTTP transport for local testing)
+	uv run python -m airflow_mcp --transport http --airflow-url http://localhost:8080
 
 docker-build:  ## Build Docker image
 	docker build -t airflow-mcp .

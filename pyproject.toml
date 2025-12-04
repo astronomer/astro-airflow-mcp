@@ -15,6 +15,9 @@ plugin = [
     "fastapi>=0.100.0",
 ]
 
+[project.scripts]
+airflow-mcp = "airflow_mcp.__main__:main"
+
 [project.entry-points."airflow.plugins"]
 airflow_mcp = "airflow_mcp.plugin:AirflowMCPPlugin"
 
