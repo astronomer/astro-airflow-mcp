@@ -13,8 +13,9 @@ install-dev:  ## Install the package with dev dependencies (local)
 	uv sync --all-extras
 
 install-dev-ci:  ## Install the package with dev dependencies (CI - system Python)
-	uv pip install --system -e ".[plugin]"
-	uv pip install --system pytest ruff pre-commit mypy bandit[toml] types-requests
+	uv export --no-hashes --format requirements-txt --all-extras > /tmp/requirements.txt
+	uv pip install --system -r /tmp/requirements.txt
+	uv pip install --system -e .
 
 install-hooks:  ## Install pre-commit hooks
 	pre-commit install
