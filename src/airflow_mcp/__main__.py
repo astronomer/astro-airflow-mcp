@@ -1,13 +1,20 @@
 """Main entry point for running the Airflow MCP server."""
 
 import argparse
+import logging
 import os
 
+from airflow_mcp.logging import configure_logging, get_logger
 from airflow_mcp.server import configure, mcp
+
+logger = get_logger("main")
 
 
 def main():
     """Main entry point for the Airflow MCP server."""
+    # Configure logging
+    configure_logging(level=logging.INFO)
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Airflow MCP Server")
     parser.add_argument(
@@ -50,20 +57,18 @@ def main():
         auth_token=args.auth_token,
     )
 
+    # Log Airflow connection configuration
+    logger.info(f"Airflow URL: {args.airflow_url}")
+    if args.auth_token:
+        logger.info("Authentication: Bearer token")
+    else:
+        logger.info("Authentication: None")
+
     # Run the server with specified transport
     if args.transport == "http":
-        print(f"Starting Airflow MCP Server in HTTP mode on {args.host}:{args.port}")
-        print(f"Airflow URL: {args.airflow_url}")
-        if args.auth_token:
-            print("Authentication: Bearer token")
-        else:
-            print("Authentication: None")
-        print(f"Connect using: http://{args.host}:{args.port}")
-        mcp.run(transport="http", host=args.host, port=args.port)
+        mcp.run(transport="http", host=args.host, port=args.port, show_banner=False)
     else:
-        print("Starting Airflow MCP Server in stdio mode")
-        print(f"Airflow URL: {args.airflow_url}")
-        mcp.run()
+        mcp.run(show_banner=False)
 
 
 if __name__ == "__main__":

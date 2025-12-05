@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+# Use standard logging for Airflow plugin integration
+# This allows Airflow to control log level, format, and destination
 logger = logging.getLogger(__name__)
 
 try:
