@@ -24,17 +24,17 @@ install-hooks:  ## Install pre-commit hooks
 	pre-commit install
 	@echo "✓ Pre-commit hooks installed"
 
-run:  ## Run the MCP server in standalone mode (HTTP transport for local testing)
-	uv run python -m airflow_mcp --transport http --airflow-url http://localhost:8080
+run:  ## Run the MCP server (defaults: http mode, localhost:8000, airflow at localhost:8080)
+	uv run python -m airflow_mcp
 
 docker-build:  ## Build Docker image
 	docker build -t airflow-mcp .
 
-docker-run:  ## Run Docker container with HTTP transport
+docker-run:  ## Run Docker container (http mode with 0.0.0.0 binding for container access)
 	docker run -p 8000:8000 \
 		-e AIRFLOW_API_URL=http://host.docker.internal:8080 \
 		airflow-mcp \
-		python -m airflow_mcp --transport http --host 0.0.0.0 --port 8000
+		python -m airflow_mcp --host 0.0.0.0
 
 build:  ## Build distribution packages (wheel and sdist)
 	uv build

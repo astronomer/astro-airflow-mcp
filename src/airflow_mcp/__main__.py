@@ -20,9 +20,9 @@ def main():
     parser.add_argument(
         "--transport",
         type=str,
-        default=os.getenv("MCP_TRANSPORT", "stdio"),
+        default=os.getenv("MCP_TRANSPORT", "http"),
         choices=["stdio", "http"],
-        help="Transport mode: stdio (default) or http (HTTP transport for Claude Code)",
+        help="Transport mode: http (default) or stdio",
     )
     parser.add_argument(
         "--host",

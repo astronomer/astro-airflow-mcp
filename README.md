@@ -12,7 +12,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Ap
 
 ## Features
 
-- **19 MCP Tools** for accessing Airflow data:
+- **MCP Tools** for accessing Airflow data:
   - DAG management (list, get details, get source code, stats, warnings)
   - Task management (list, get details, get task instances)
   - Pool management (list, get details)
@@ -26,132 +26,50 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Ap
 
 - **Authentication support**: Bearer token authentication
 
+
 ## Installation
 
-### Standalone Mode
-
-#### Option 1: Local Installation
-
-Install the package:
+We recommend installing airflow-mcp with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-make install
-# or directly with uv
-uv pip install -e .
+uv pip install airflow-mcp
 ```
-
-#### Option 2: CLI Tool Installation
-
-Install as a system-wide CLI tool:
-
-```bash
-make install-tool
-# or directly with uv
-uv tool install -e .
-```
-
-This makes the `airflow-mcp` command available globally on your system.
-
-#### Option 3: Docker
-
-Build and run with Docker:
-
-```bash
-# Build the image
-make docker-build
-# or directly with docker
-docker build -t airflow-mcp .
-
-# Run with stdio transport (default)
-make docker-run
-# or directly with docker
-docker run -e AIRFLOW_API_URL=http://host.docker.internal:8080 \
-           -e AIRFLOW_AUTH_TOKEN=your_token \
-           airflow-mcp
-
-# Run with HTTP transport
-docker run -p 8000:8000 \
-           -e AIRFLOW_API_URL=http://host.docker.internal:8080 \
-           airflow-mcp \
-           python -m airflow_mcp --transport http --host 0.0.0.0 --port 8000
-```
-
-**Note**: Use `host.docker.internal` to access services running on your host machine from within Docker (eg: `astro dev start`).
-
-### Airflow Plugin Mode
-
-Install with the plugin extras:
-
-```bash
-pip install -e ".[plugin]"
-# or with uv
-uv pip install -e ".[plugin]"
-```
-
-This includes Apache Airflow and FastAPI dependencies required for plugin integration.
 
 ## Usage
 
-### Standalone Server
+### Running the Server
 
-Run the MCP server directly:
-
-```bash
-make run
-# or
-uv run python -m airflow_mcp
-```
-
-With authentication (using environment variables):
+After installation, start the MCP server:
 
 ```bash
-export AIRFLOW_API_URL=http://localhost:8080
-export AIRFLOW_AUTH_TOKEN=your_token
-
-make run
+airflow-mcp
 ```
 
-Or pass authentication via command-line flag:
+By default, this will:
+- Start an HTTP server on `localhost:8000`
+- Connect to Airflow at `http://localhost:8080` (`astro dev start`)
+- Expose MCP protocol endpoints at `http://localhost:8000/mcp`
+
+The server provides a set of tools that AI assistants can use to interact with your Airflow instance through the REST API. No authentication is required by default, but you can configure it using environment variables or command-line flags (see [Configuration](#configuration)).
+
+**Custom configuration:**
 
 ```bash
-uv run python -m airflow_mcp --airflow-url http://localhost:8080 --auth-token YOUR_TOKEN
+# Connect to a different Airflow instance
+airflow-mcp --airflow-url https://my-airflow.example.com --auth-token my_token
+
+# Use a different port
+airflow-mcp --port 9000
+
+# Use stdio mode (for Claude Desktop)
+airflow-mcp --transport stdio
 ```
-
-**Transport modes:**
-
-The server uses stdio transport by default for MCP communication. For HTTP transport (useful for Claude Code), add `--transport http`:
-
-```bash
-uv run python -m airflow_mcp --transport http --host localhost --port 8000
-```
-
-With HTTP transport, the server will be available at `http://localhost:8000/mcp`.
-
-### Airflow Plugin Mode
-
-The plugin automatically integrates with Airflow 3.x when installed.
-
-1. **Install in Airflow environment**:
-   ```bash
-   pip install -e ".[plugin]"
-   ```
-
-2. **Verify plugin is loaded**:
-   ```bash
-   airflow plugins
-   ```
-
-3. **Access the MCP endpoints**:
-   - MCP protocol endpoint: `http://your-airflow:8080/mcp/v1`
-   - Available at Airflow webserver startup
 
 ### Using with MCP Clients
 
 #### Claude Desktop
 
 Add to your Claude Desktop configuration:
-
-**If installed as CLI tool** (recommended):
 
 ```json
 {
@@ -167,28 +85,9 @@ Add to your Claude Desktop configuration:
 }
 ```
 
-**If installed with pip/uv (local install)**:
-
-```json
-{
-  "mcpServers": {
-    "airflow": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "airflow_mcp"],
-      "env": {
-        "AIRFLOW_API_URL": "http://localhost:8080",
-        "AIRFLOW_AUTH_TOKEN": "your_token"
-      }
-    }
-  }
-}
-```
-
 #### Cursor
 
 Configure in Cursor's MCP settings:
-
-**If installed as CLI tool** (recommended):
 
 ```json
 {
@@ -200,20 +99,7 @@ Configure in Cursor's MCP settings:
 }
 ```
 
-**If installed with pip/uv (local install)**:
-
-```json
-{
-  "mcpServers": {
-    "airflow": {
-      "command": "uv",
-      "args": ["run", "python", "-m", "airflow_mcp"]
-    }
-  }
-}
-```
-
-**Or point to the standaone endpoint**:
+**Or connect to the standalone server endpoint**:
 
 ```json
 {
@@ -225,7 +111,7 @@ Configure in Cursor's MCP settings:
 }
 ```
 
-**Or point to the plugin endpoint**:
+**Or connect to the Airflow plugin endpoint**:
 
 ```json
 {
