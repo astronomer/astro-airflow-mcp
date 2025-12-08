@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="404" height="276" alt="ChatGPT Image Dec 2, 2025, 06_23_58 PM" src="https://github.com/user-attachments/assets/04c67138-c187-44d4-a202-bb79bd631fc5" />
+  <img height="150" alt="apache-airflow" src="https://github.com/user-attachments/assets/9996b91c-8abb-46e5-920a-6dbfd27e8d7d" />
 </p>
 
 # Airflow MCP Server
