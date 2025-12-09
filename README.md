@@ -194,14 +194,6 @@ All tools use a global configuration that can be set via:
    - `AIRFLOW_API_URL`: Airflow webserver URL
    - `AIRFLOW_AUTH_TOKEN`: Bearer token
 
-## Requirements
-
-- Python 3.10+
-- FastMCP 0.1.0+
-- Requests 2.31.0+
-- Apache Airflow 3.0.0+ (for plugin mode)
-- FastAPI 0.100.0+ (for plugin mode)
-
 ## Architecture
 
 The server is built using [FastMCP](https://github.com/jlowin/fastmcp), which provides:
