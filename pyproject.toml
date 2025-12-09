@@ -1,6 +1,6 @@
 [project]
 name = "astro-airflow-mcp"
-version = "v0.1.1"
+dynamic = ["version"]
 description = "A FastMCP server for Airflow integration that can run standalone or as an Airflow 3 plugin"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,8 +22,12 @@ astro-airflow-mcp = "astro_airflow_mcp.__main__:main"
 airflow_mcp = "astro_airflow_mcp.plugin:AirflowMCPPlugin"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0+dev"
 
 [tool.hatchling.build.targets.wheel]
 packages = ["src/astro_airflow_mcp"]
