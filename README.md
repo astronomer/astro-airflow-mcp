@@ -1,7 +1,3 @@
-<p align="center">
-  <img height="150" alt="apache-airflow" src="https://github.com/user-attachments/assets/9996b91c-8abb-46e5-920a-6dbfd27e8d7d" />
-</p>
-
 # Airflow MCP Server
 
 [![CI](https://github.com/astronomer/astro-airflow-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/astronomer/astro-airflow-mcp/actions/workflows/ci.yml)
