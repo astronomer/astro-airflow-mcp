@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from astro_airflow_mcp import __version__
+
 # Use standard logging for Airflow plugin integration
 # This allows Airflow to control log level, format, and destination
 logger = logging.getLogger(__name__)
@@ -30,7 +32,9 @@ try:
 
     # Wrap in a FastAPI app with the MCP app's lifespan
     # This is required for FastMCP to initialize its task group
-    app = FastAPI(title="Airflow MCP Server", version="0.1.0", lifespan=mcp_protocol_app.lifespan)
+    app = FastAPI(
+        title="Airflow MCP Server", version=__version__, lifespan=mcp_protocol_app.lifespan
+    )
 
     # Mount the MCP protocol app
     app.mount("/v1", mcp_protocol_app)
