@@ -10,7 +10,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Ap
 ## Features
 
 - **MCP Tools** for accessing Airflow data:
-  - DAG management (list, get details, get source code, stats, warnings)
+  - DAG management (list, get details, get source code, stats, warnings, import errors)
   - Task management (list, get details, get task instances)
   - Pool management (list, get details)
   - Variable management (list, get specific variables)
@@ -141,6 +141,7 @@ The MCP server provides the following tools:
 | `get_dag_source` | Get the source code of a DAG |
 | `get_dag_stats` | Get DAG run statistics |
 | `list_dag_warnings` | Get DAG import warnings |
+| `list_import_errors` | Get import errors from DAG files that failed to parse |
 | `list_tasks` | Get all tasks in a DAG |
 | `get_task` | Get details about a specific task |
 | `get_task_instance` | Get task instance execution details |

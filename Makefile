@@ -40,7 +40,7 @@ build:  ## Build distribution packages (wheel and sdist)
 	uv build
 
 test:  ## Run tests
-	PYTHONPATH=src uv run pytest
+	uv run pytest
 
 lint:  ## Run linting checks (ruff) - reports issues only
 	uv run ruff check src/ tests/
