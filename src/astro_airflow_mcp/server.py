@@ -403,6 +403,40 @@ def _list_dag_warnings_impl(
         return str(e)
 
 
+def _list_import_errors_impl(
+    airflow_url: str = DEFAULT_AIRFLOW_URL,
+    limit: int = DEFAULT_LIMIT,
+    offset: int = DEFAULT_OFFSET,
+    auth_token: str | None = None,
+) -> str:
+    """Internal implementation for listing import errors from Airflow.
+
+    Args:
+        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
+        limit: Maximum number of import errors to return (default: 100)
+        offset: Offset for pagination (default: 0)
+        auth_token: Optional Bearer token for token-based authentication
+
+    Returns:
+        JSON string containing the list of import errors
+    """
+    try:
+        params = {"limit": limit, "offset": offset}
+        data = _call_airflow_api(
+            "importErrors",
+            airflow_url,
+            params,
+            auth_token=auth_token,
+        )
+
+        if "import_errors" in data:
+            return _wrap_list_response(data["import_errors"], "import_errors", data)
+        else:
+            return f"No import errors found. Response: {data}"
+    except Exception as e:
+        return str(e)
+
+
 @mcp.tool()
 def list_dag_warnings() -> str:
     """Get warnings and issues detected in DAG definitions.
@@ -423,6 +457,40 @@ def list_dag_warnings() -> str:
         JSON with list of DAG warnings and their details
     """
     return _list_dag_warnings_impl(
+        airflow_url=_config.url,
+        auth_token=_config.auth_token,
+    )
+
+
+@mcp.tool()
+def list_import_errors() -> str:
+    """Get import errors from DAG files that failed to parse or load.
+
+    Use this tool when the user asks about:
+    - "Are there any import errors?" or "Show me import errors"
+    - "Why isn't my DAG showing up?" or "DAG not appearing in Airflow"
+    - "What DAG files have errors?" or "Show me broken DAGs"
+    - "Check for syntax errors" or "Are there any parsing errors?"
+    - "Why is my DAG file failing to load?"
+
+    Import errors occur when DAG files have problems that prevent Airflow
+    from parsing them, such as:
+    - Python syntax errors
+    - Missing imports or dependencies
+    - Module not found errors
+    - Invalid DAG definitions
+    - Runtime errors during file parsing
+
+    Returns import error details including:
+    - import_error_id: Unique identifier for the error
+    - timestamp: When the error was detected
+    - filename: Path to the DAG file with the error
+    - stack_trace: Complete error message and traceback
+
+    Returns:
+        JSON with list of import errors and their stack traces
+    """
+    return _list_import_errors_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
     )
