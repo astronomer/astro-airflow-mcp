@@ -74,7 +74,21 @@ clean:  ## Clean up build artifacts and cache files
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
 
-setup: install-dev install-hooks  ## Complete setup (install dev deps + hooks)
+download-specs:  ## Download OpenAPI specs from Airflow releases
+	@echo "Downloading OpenAPI specifications..."
+	@mkdir -p openapi_specs
+	curl -L https://raw.githubusercontent.com/apache/airflow/2.9.0/airflow/api_connexion/openapi/v1.yaml \
+		-o openapi_specs/airflow-2.9.0-spec.yaml
+	curl -L https://raw.githubusercontent.com/apache/airflow/3.1.3/airflow-core/src/airflow/api_fastapi/core_api/openapi/v2-rest-api-generated.yaml \
+		-o openapi_specs/airflow-3.1.3-spec.yaml
+	@echo "✓ Specs downloaded to openapi_specs/"
+
+generate-clients: download-specs  ## Generate Python clients from OpenAPI specs
+	@echo "Generating API clients..."
+	chmod +x scripts/generate_clients.sh
+	./scripts/generate_clients.sh
+
+setup: install-dev install-hooks generate-clients  ## Complete setup (install dev deps + hooks + generate clients)
 	@echo "✓ Development environment ready"
 
 ci: pre-commit test  ## Run CI checks (pre-commit + tests)

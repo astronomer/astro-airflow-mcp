@@ -1,9 +1,12 @@
 """FastMCP server for Airflow integration."""
 
+import json
 from typing import Any
 
-import requests
 from fastmcp import FastMCP
+
+# Import adapter support for multi-version Airflow compatibility
+from astro_airflow_mcp.adapters import AirflowAdapter, create_adapter
 
 # Default configuration values
 DEFAULT_AIRFLOW_URL = "http://localhost:8080"
@@ -33,11 +36,30 @@ mcp = FastMCP(
 
 # Global configuration for Airflow API access
 class AirflowConfig:
-    """Global configuration for Airflow API access."""
+    """Global configuration for Airflow API access with version-aware adapter."""
 
     def __init__(self):
         self.url: str = DEFAULT_AIRFLOW_URL
         self.auth_token: str | None = None
+        self.username: str | None = None
+        self.password: str | None = None
+        self._adapter: AirflowAdapter | None = None
+
+    @property
+    def adapter(self) -> AirflowAdapter:
+        """Get or create the Airflow adapter (lazy initialization with version detection)."""
+        if self._adapter is None:
+            self._adapter = create_adapter(
+                self.url,
+                auth_token=self.auth_token,
+                username=self.username,
+                password=self.password,
+            )
+        return self._adapter
+
+    def reset_adapter(self) -> None:
+        """Reset adapter (useful when config changes or for testing)."""
+        self._adapter = None
 
 
 _config = AirflowConfig()
@@ -46,61 +68,37 @@ _config = AirflowConfig()
 def configure(
     url: str | None = None,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> None:
     """Configure global Airflow connection settings.
 
     Args:
         url: Base URL of Airflow webserver
-        auth_token: Bearer token for authentication
+        auth_token: Bearer token for authentication (alternative to username/password)
+        username: Username for basic authentication (optional)
+        password: Password for basic authentication (optional)
+
+    Note:
+        Authentication is version-specific:
+        - Airflow 2.x: Defaults to admin/admin if no credentials provided
+        - Airflow 3.x: No authentication by default (open access)
+
+        Use either auth_token OR username/password, not both.
     """
     if url:
         _config.url = url
     if auth_token:
         _config.auth_token = auth_token
+    if username:
+        _config.username = username
+    if password:
+        _config.password = password
+    # Reset adapter when config changes to force re-detection
+    _config.reset_adapter()
 
 
-# Helper functions for API calls and response formatting
-def _call_airflow_api(
-    endpoint: str,
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    params: dict[str, Any] | None = None,
-    auth_token: str | None = None,
-) -> dict[str, Any]:
-    """Call Airflow REST API with error handling and optional authentication.
-
-    Args:
-        endpoint: API endpoint path (e.g., 'dags', 'dagRuns')
-        airflow_url: Base URL of the Airflow webserver
-        params: Optional query parameters
-        auth_token: Optional Bearer token for token-based authentication
-
-    Returns:
-        Parsed JSON response from the API
-
-    Raises:
-        Exception: If the API call fails with error details
-
-    Note:
-        If auth_token is provided, Bearer token authentication is used.
-        If not provided, no authentication is used.
-    """
-    try:
-        api_url = f"{airflow_url}/api/v2/{endpoint}"
-        headers: dict[str, str] = {}
-
-        # Handle authentication
-        if auth_token:
-            headers["Authorization"] = f"Bearer {auth_token}"
-
-        response = requests.get(api_url, params=params, headers=headers, timeout=30)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"Error connecting to Airflow API: {str(e)}") from e
-    except Exception as e:
-        raise Exception(f"Error calling API endpoint '{endpoint}': {str(e)}") from e
-
-
+# Helper functions for response formatting
 def _wrap_list_response(items: list[dict[str, Any]], key_name: str, data: dict[str, Any]) -> str:
     """Wrap API list response with pagination metadata.
 
@@ -123,30 +121,17 @@ def _wrap_list_response(items: list[dict[str, Any]], key_name: str, data: dict[s
     return json.dumps(result, indent=2)
 
 
-def _get_dag_details_impl(
-    dag_id: str,
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _get_dag_details_impl(dag_id: str) -> str:
     """Internal implementation for getting details about a specific DAG.
 
     Args:
         dag_id: The ID of the DAG to get details for
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
 
     Returns:
         JSON string containing the DAG details
     """
     try:
-        data = _call_airflow_api(
-            f"dags/{dag_id}",
-            airflow_url,
-            auth_token=auth_token,
-        )
-
-        import json
-
+        data = _config.adapter.get_dag(dag_id)
         return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
@@ -187,38 +172,24 @@ def get_dag_details(dag_id: str) -> str:
     Returns:
         JSON with complete details about the specified DAG
     """
-    return _get_dag_details_impl(
-        dag_id=dag_id,
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _get_dag_details_impl(dag_id=dag_id)
 
 
-def _list_dags_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    limit: int = DEFAULT_LIMIT,
-    offset: int = DEFAULT_OFFSET,
-    auth_token: str | None = None,
-) -> str:
+def _list_dags_impl(limit: int = DEFAULT_LIMIT, offset: int = DEFAULT_OFFSET) -> str:
     """Internal implementation for listing DAGs from Airflow.
 
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         limit: Maximum number of DAGs to return (default: 100)
         offset: Offset for pagination (default: 0)
-        auth_token: Optional Bearer token for token-based authentication
 
     Returns:
         JSON string containing the list of DAGs with their metadata
     """
     try:
-        params = {"limit": limit, "offset": offset}
-        data = _call_airflow_api(
-            "dags",
-            airflow_url,
-            params,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_dags(limit=limit, offset=offset)
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "dags" in data:
             return _wrap_list_response(data["dags"], "dags", data)
@@ -252,38 +223,21 @@ def list_dags() -> str:
     Returns:
         JSON with list of all DAGs and their complete metadata
     """
-    return _list_dags_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_dags_impl()
 
 
-def _get_dag_source_impl(
-    dag_id: str,
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _get_dag_source_impl(dag_id: str) -> str:
     """Internal implementation for getting DAG source code from Airflow.
 
     Args:
         dag_id: The ID of the DAG to get source code for
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
 
     Returns:
         JSON string containing the DAG source code and metadata
     """
     try:
-        # Using dagSources/{dag_id} endpoint
-        source_data = _call_airflow_api(
-            f"dagSources/{dag_id}",
-            airflow_url,
-            auth_token=auth_token,
-        )
-
-        import json
-
-        return json.dumps(source_data, indent=2)
+        data = _config.adapter.get_dag_source(dag_id)
+        return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
 
@@ -308,35 +262,20 @@ def get_dag_source(dag_id: str) -> str:
     Returns:
         JSON with DAG source code and metadata
     """
-    return _get_dag_source_impl(
-        dag_id=dag_id,
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _get_dag_source_impl(dag_id=dag_id)
 
 
-def _get_dag_stats_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _get_dag_stats_impl() -> str:
     """Internal implementation for getting DAG statistics from Airflow.
-
-    Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
 
     Returns:
         JSON string containing DAG run statistics by state
     """
     try:
-        # Using dagStats endpoint
-        stats_data = _call_airflow_api(
-            "dagStats",
-            airflow_url,
-            auth_token=auth_token,
-        )
+        stats_data = _config.adapter.get_dag_stats()
 
-        import json
+        if "error" in stats_data:
+            return json.dumps(stats_data, indent=2)
 
         return json.dumps(stats_data, indent=2)
     except Exception as e:
@@ -363,37 +302,24 @@ def get_dag_stats() -> str:
     Returns:
         JSON with DAG run statistics organized by DAG and state
     """
-    return _get_dag_stats_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _get_dag_stats_impl()
 
 
-def _list_dag_warnings_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    limit: int = DEFAULT_LIMIT,
-    offset: int = DEFAULT_OFFSET,
-    auth_token: str | None = None,
-) -> str:
+def _list_dag_warnings_impl(limit: int = DEFAULT_LIMIT, offset: int = DEFAULT_OFFSET) -> str:
     """Internal implementation for listing DAG warnings from Airflow.
 
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         limit: Maximum number of warnings to return (default: 100)
         offset: Offset for pagination (default: 0)
-        auth_token: Optional Bearer token for token-based authentication
 
     Returns:
         JSON string containing the list of DAG warnings
     """
     try:
-        params = {"limit": limit, "offset": offset}
-        data = _call_airflow_api(
-            "dagWarnings",
-            airflow_url,
-            params,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_dag_warnings(limit=limit, offset=offset)
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "dag_warnings" in data:
             return _wrap_list_response(data["dag_warnings"], "dag_warnings", data)
@@ -403,31 +329,21 @@ def _list_dag_warnings_impl(
         return str(e)
 
 
-def _list_import_errors_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    limit: int = DEFAULT_LIMIT,
-    offset: int = DEFAULT_OFFSET,
-    auth_token: str | None = None,
-) -> str:
+def _list_import_errors_impl(limit: int = DEFAULT_LIMIT, offset: int = DEFAULT_OFFSET) -> str:
     """Internal implementation for listing import errors from Airflow.
 
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         limit: Maximum number of import errors to return (default: 100)
         offset: Offset for pagination (default: 0)
-        auth_token: Optional Bearer token for token-based authentication
 
     Returns:
         JSON string containing the list of import errors
     """
     try:
-        params = {"limit": limit, "offset": offset}
-        data = _call_airflow_api(
-            "importErrors",
-            airflow_url,
-            params,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_import_errors(limit=limit, offset=offset)
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "import_errors" in data:
             return _wrap_list_response(data["import_errors"], "import_errors", data)
@@ -456,10 +372,7 @@ def list_dag_warnings() -> str:
     Returns:
         JSON with list of DAG warnings and their details
     """
-    return _list_dag_warnings_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_dag_warnings_impl()
 
 
 @mcp.tool()
@@ -490,66 +403,44 @@ def list_import_errors() -> str:
     Returns:
         JSON with list of import errors and their stack traces
     """
-    return _list_import_errors_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_import_errors_impl()
 
 
-def _get_task_impl(
-    dag_id: str,
-    task_id: str,
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _get_task_impl(dag_id: str, task_id: str) -> str:
     """Internal implementation for getting task details from Airflow.
 
     Args:
         dag_id: The ID of the DAG
         task_id: The ID of the task
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the task details
     """
     try:
-        endpoint = f"dags/{dag_id}/tasks/{task_id}"
-        data = _call_airflow_api(
-            endpoint,
-            airflow_url,
-            auth_token=auth_token,
-        )
-
-        import json
-
+        data = _config.adapter.get_task(dag_id, task_id)
         return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
 
 
-def _list_tasks_impl(
-    dag_id: str,
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _list_tasks_impl(dag_id: str) -> str:
     """Internal implementation for listing tasks in a DAG from Airflow.
 
     Args:
         dag_id: The ID of the DAG to list tasks for
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the list of tasks with their metadata
     """
     try:
-        endpoint = f"dags/{dag_id}/tasks"
-        data = _call_airflow_api(
-            endpoint,
-            airflow_url,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_tasks(dag_id)
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "tasks" in data:
             return _wrap_list_response(data["tasks"], "tasks", data)
@@ -559,36 +450,21 @@ def _list_tasks_impl(
         return str(e)
 
 
-def _get_task_instance_impl(
-    dag_id: str,
-    dag_run_id: str,
-    task_id: str,
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _get_task_instance_impl(dag_id: str, dag_run_id: str, task_id: str) -> str:
     """Internal implementation for getting task instance details from Airflow.
 
     Args:
         dag_id: The ID of the DAG
         dag_run_id: The ID of the DAG run
         task_id: The ID of the task
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the task instance details
     """
     try:
-        # Using dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances/{task_id} endpoint
-        endpoint = f"dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances/{task_id}"
-        data = _call_airflow_api(
-            endpoint,
-            airflow_url,
-            auth_token=auth_token,
-        )
-
-        import json
-
+        data = _config.adapter.get_task_instance(dag_id, dag_run_id, task_id)
         return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
@@ -629,12 +505,7 @@ def get_task(dag_id: str, task_id: str) -> str:
     Returns:
         JSON with complete task definition details
     """
-    return _get_task_impl(
-        dag_id=dag_id,
-        task_id=task_id,
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _get_task_impl(dag_id=dag_id, task_id=task_id)
 
 
 @mcp.tool()
@@ -666,11 +537,7 @@ def list_tasks(dag_id: str) -> str:
     Returns:
         JSON with list of all tasks in the DAG and their configurations
     """
-    return _list_tasks_impl(
-        dag_id=dag_id,
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_tasks_impl(dag_id=dag_id)
 
 
 @mcp.tool()
@@ -703,41 +570,29 @@ def get_task_instance(dag_id: str, dag_run_id: str, task_id: str) -> str:
     Returns:
         JSON with complete task instance details
     """
-    return _get_task_instance_impl(
-        dag_id=dag_id,
-        dag_run_id=dag_run_id,
-        task_id=task_id,
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _get_task_instance_impl(dag_id=dag_id, dag_run_id=dag_run_id, task_id=task_id)
 
 
-def _list_dag_runs_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    limit: int = DEFAULT_LIMIT,
-    offset: int = DEFAULT_OFFSET,
-    auth_token: str | None = None,
-) -> str:
+def _list_dag_runs_impl(limit: int = DEFAULT_LIMIT, offset: int = DEFAULT_OFFSET) -> str:
     """Internal implementation for listing DAG runs from Airflow.
 
+    Note: airflow_url and auth_token params are kept for backwards compatibility
+    but are no longer used. The adapter uses _config.url and _config.auth_token.
+
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
         limit: Maximum number of DAG runs to return (default: 100)
         offset: Offset for pagination (default: 0)
-        auth_token: Optional Bearer token for token-based authentication
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the list of DAG runs with their metadata
     """
     try:
-        # Using ~/dagRuns to get runs across all DAGs
-        params = {"limit": limit, "offset": offset}
-        data = _call_airflow_api(
-            "dags/~/dagRuns",
-            airflow_url,
-            params,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_dag_runs(dag_id=None, limit=limit, offset=offset)
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "dag_runs" in data:
             return _wrap_list_response(data["dag_runs"], "dag_runs", data)
@@ -772,37 +627,30 @@ def list_dag_runs() -> str:
     Returns:
         JSON with list of DAG runs across all DAGs, sorted by most recent
     """
-    return _list_dag_runs_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_dag_runs_impl()
 
 
-def _list_assets_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    limit: int = DEFAULT_LIMIT,
-    offset: int = DEFAULT_OFFSET,
-    auth_token: str | None = None,
-) -> str:
+def _list_assets_impl(limit: int = DEFAULT_LIMIT, offset: int = DEFAULT_OFFSET) -> str:
     """Internal implementation for listing assets from Airflow.
 
+    Note: This implementation uses the adapter which automatically normalizes
+    field names between Airflow 2.x (datasets/consuming_dags) and
+    Airflow 3.x (assets/scheduled_dags) for consistency.
+
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
         limit: Maximum number of assets to return (default: 100)
         offset: Offset for pagination (default: 0)
-        auth_token: Optional Bearer token for token-based authentication
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the list of assets with their metadata
     """
     try:
-        params = {"limit": limit, "offset": offset}
-        data = _call_airflow_api(
-            "assets",
-            airflow_url,
-            params,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_assets(limit=limit, offset=offset)
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "assets" in data:
             return _wrap_list_response(data["assets"], "assets", data)
@@ -837,71 +685,32 @@ def list_assets() -> str:
     Returns:
         JSON with list of all assets and their producing/consuming relationships
     """
-    return _list_assets_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_assets_impl()
 
 
-def _list_connections_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    limit: int = DEFAULT_LIMIT,
-    offset: int = DEFAULT_OFFSET,
-    auth_token: str | None = None,
-) -> str:
+def _list_connections_impl(limit: int = DEFAULT_LIMIT, offset: int = DEFAULT_OFFSET) -> str:
     """Internal implementation for listing connections from Airflow.
 
-    NOTE: This endpoint uses explicit field filtering (unlike other endpoints)
-    to exclude sensitive information like passwords for security reasons.
+    NOTE: Passwords are automatically filtered by the adapter for security.
 
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
         limit: Maximum number of connections to return (default: 100)
         offset: Offset for pagination (default: 0)
-        auth_token: Optional Bearer token for token-based authentication
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the list of connections with their metadata
     """
-    import json
-
     try:
-        params = {"limit": limit, "offset": offset}
-        data = _call_airflow_api(
-            "connections",
-            airflow_url,
-            params,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_connections(limit=limit, offset=offset)
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "connections" in data:
-            connections = data["connections"]
-            total_entries = data.get("total_entries", len(connections))
-
-            # SECURITY: Explicitly filter sensitive fields (password)
-            # We cannot use pass-through here as we must prevent password exposure
-            filtered_connections = [
-                {
-                    "connection_id": conn.get("connection_id"),
-                    "conn_type": conn.get("conn_type"),
-                    "description": conn.get("description"),
-                    "host": conn.get("host"),
-                    "port": conn.get("port"),
-                    "schema": conn.get("schema"),
-                    "login": conn.get("login"),
-                    "extra": conn.get("extra"),
-                    # password is intentionally excluded
-                }
-                for conn in connections
-            ]
-
-            result = {
-                "total_connections": total_entries,
-                "returned_count": len(filtered_connections),
-                "connections": filtered_connections,
-            }
-
-            return json.dumps(result, indent=2)
+            # Adapter already filters passwords
+            return _wrap_list_response(data["connections"], "connections", data)
         else:
             return f"No connections found. Response: {data}"
     except Exception as e:
@@ -937,66 +746,44 @@ def list_connections() -> str:
     Returns:
         JSON with list of all connections (credentials excluded)
     """
-    return _list_connections_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_connections_impl()
 
 
-def _get_variable_impl(
-    variable_key: str,
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _get_variable_impl(variable_key: str) -> str:
     """Internal implementation for getting a specific variable from Airflow.
 
     Args:
         variable_key: The key of the variable to get
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the variable details
     """
     try:
-        data = _call_airflow_api(
-            f"variables/{variable_key}",
-            airflow_url,
-            auth_token=auth_token,
-        )
-
-        import json
-
+        data = _config.adapter.get_variable(variable_key)
         return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
 
 
-def _list_variables_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    limit: int = DEFAULT_LIMIT,
-    offset: int = DEFAULT_OFFSET,
-    auth_token: str | None = None,
-) -> str:
+def _list_variables_impl(limit: int = DEFAULT_LIMIT, offset: int = DEFAULT_OFFSET) -> str:
     """Internal implementation for listing variables from Airflow.
 
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
         limit: Maximum number of variables to return (default: 100)
         offset: Offset for pagination (default: 0)
-        auth_token: Optional Bearer token for token-based authentication
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the list of variables with their metadata
     """
     try:
-        params = {"limit": limit, "offset": offset}
-        data = _call_airflow_api(
-            "variables",
-            airflow_url,
-            params,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_variables(limit=limit, offset=offset)
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "variables" in data:
             return _wrap_list_response(data["variables"], "variables", data)
@@ -1006,119 +793,92 @@ def _list_variables_impl(
         return str(e)
 
 
-def _get_version_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _get_version_impl() -> str:
     """Internal implementation for getting Airflow version information.
 
+    Note: airflow_url and auth_token params are kept for backwards compatibility
+    but are no longer used. The adapter uses _config.url and _config.auth_token.
+
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the Airflow version information
     """
     try:
-        data = _call_airflow_api(
-            "version",
-            airflow_url,
-            auth_token=auth_token,
-        )
-
-        import json
-
+        data = _config.adapter.get_version()
         return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
 
 
-def _get_config_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _get_config_impl() -> str:
     """Internal implementation for getting Airflow configuration.
 
+    Note: airflow_url and auth_token params are kept for backwards compatibility
+    but are no longer used. The adapter uses _config.url and _config.auth_token.
+
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
-        JSON string containing the Airflow configuration organized by sections
+        JSON string containing the Airflow configuration (format varies by version)
     """
     import json
 
     try:
-        data = _call_airflow_api(
-            "config",
-            airflow_url,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.get_config()
 
-        if "sections" in data:
-            # Add summary metadata and pass through sections
-            result = {"total_sections": len(data["sections"]), "sections": data["sections"]}
-            return json.dumps(result, indent=2)
-        else:
-            return f"No configuration found. Response: {data}"
+        # Return whatever format the adapter provides (JSON or text wrapped in dict)
+        return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
 
 
-def _get_pool_impl(
-    pool_name: str,
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _get_pool_impl(pool_name: str) -> str:
     """Internal implementation for getting details about a specific pool.
+
+    Note: airflow_url and auth_token params are kept for backwards compatibility
+    but are no longer used. The adapter uses _config.url and _config.auth_token.
 
     Args:
         pool_name: The name of the pool to get details for
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the pool details
     """
     try:
-        data = _call_airflow_api(
-            f"pools/{pool_name}",
-            airflow_url,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.get_pool(pool_name)
 
-        import json
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
 
 
-def _list_pools_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    limit: int = DEFAULT_LIMIT,
-    offset: int = DEFAULT_OFFSET,
-    auth_token: str | None = None,
-) -> str:
+def _list_pools_impl(limit: int = DEFAULT_LIMIT, offset: int = DEFAULT_OFFSET) -> str:
     """Internal implementation for listing pools from Airflow.
 
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
         limit: Maximum number of pools to return (default: 100)
         offset: Offset for pagination (default: 0)
-        auth_token: Optional Bearer token for token-based authentication
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the list of pools with their metadata
     """
     try:
-        params = {"limit": limit, "offset": offset}
-        data = _call_airflow_api(
-            "pools",
-            airflow_url,
-            params,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_pools(limit=limit, offset=offset)
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "pools" in data:
             return _wrap_list_response(data["pools"], "pools", data)
@@ -1128,31 +888,26 @@ def _list_pools_impl(
         return str(e)
 
 
-def _list_plugins_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    limit: int = DEFAULT_LIMIT,
-    offset: int = DEFAULT_OFFSET,
-    auth_token: str | None = None,
-) -> str:
+def _list_plugins_impl(limit: int = DEFAULT_LIMIT, offset: int = DEFAULT_OFFSET) -> str:
     """Internal implementation for listing installed plugins from Airflow.
 
+    Note: airflow_url and auth_token params are kept for backwards compatibility
+    but are no longer used. The adapter uses _config.url and _config.auth_token.
+
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
         limit: Maximum number of plugins to return (default: 100)
         offset: Offset for pagination (default: 0)
-        auth_token: Optional Bearer token for token-based authentication
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the list of installed plugins
     """
     try:
-        params = {"limit": limit, "offset": offset}
-        data = _call_airflow_api(
-            "plugins",
-            airflow_url,
-            params,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_plugins(limit=limit, offset=offset)
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "plugins" in data:
             return _wrap_list_response(data["plugins"], "plugins", data)
@@ -1162,25 +917,24 @@ def _list_plugins_impl(
         return str(e)
 
 
-def _list_providers_impl(
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    auth_token: str | None = None,
-) -> str:
+def _list_providers_impl() -> str:
     """Internal implementation for listing installed providers from Airflow.
 
+    Note: airflow_url and auth_token params are kept for backwards compatibility
+    but are no longer used. The adapter uses _config.url and _config.auth_token.
+
     Args:
-        airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
-        auth_token: Optional Bearer token for token-based authentication
+        airflow_url: (Deprecated) Base URL - uses _config.url instead
+        auth_token: (Deprecated) Auth token - uses _config.auth_token instead
 
     Returns:
         JSON string containing the list of installed providers
     """
     try:
-        data = _call_airflow_api(
-            "providers",
-            airflow_url,
-            auth_token=auth_token,
-        )
+        data = _config.adapter.list_providers()
+
+        if "error" in data:
+            return json.dumps(data, indent=2)
 
         if "providers" in data:
             return _wrap_list_response(data["providers"], "providers", data)
@@ -1218,11 +972,7 @@ def get_pool(pool_name: str) -> str:
     Returns:
         JSON with complete details about the specified pool
     """
-    return _get_pool_impl(
-        pool_name=pool_name,
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _get_pool_impl(pool_name=pool_name)
 
 
 @mcp.tool()
@@ -1252,10 +1002,7 @@ def list_pools() -> str:
     Returns:
         JSON with list of all pools and their current utilization
     """
-    return _list_pools_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_pools_impl()
 
 
 @mcp.tool()
@@ -1284,10 +1031,7 @@ def list_plugins() -> str:
     Returns:
         JSON with list of all installed plugins and their components
     """
-    return _list_plugins_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_plugins_impl()
 
 
 @mcp.tool()
@@ -1309,10 +1053,7 @@ def list_providers() -> str:
     Returns:
         JSON with list of all installed provider packages and their details
     """
-    return _list_providers_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_providers_impl()
 
 
 @mcp.tool()
@@ -1339,11 +1080,7 @@ def get_variable(variable_key: str) -> str:
     Returns:
         JSON with the variable's key, value, and metadata
     """
-    return _get_variable_impl(
-        variable_key=variable_key,
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _get_variable_impl(variable_key=variable_key)
 
 
 @mcp.tool()
@@ -1372,10 +1109,7 @@ def list_variables() -> str:
     Returns:
         JSON with list of all variables and their values
     """
-    return _list_variables_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _list_variables_impl()
 
 
 @mcp.tool()
@@ -1401,10 +1135,7 @@ def get_airflow_version() -> str:
     Returns:
         JSON with Airflow version information
     """
-    return _get_version_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _get_version_impl()
 
 
 @mcp.tool()
@@ -1436,7 +1167,4 @@ def get_airflow_config() -> str:
     Returns:
         JSON with complete Airflow configuration organized by sections
     """
-    return _get_config_impl(
-        airflow_url=_config.url,
-        auth_token=_config.auth_token,
-    )
+    return _get_config_impl()
