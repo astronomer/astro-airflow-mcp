@@ -78,3 +78,17 @@ ignore = [
 [tool.bandit]
 exclude_dirs = ["tests", "examples"]
 skips = ["B101"]  # Skip assert_used check (common in tests)
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+no_strict_optional = true
+exclude = [
+    "src/astro_airflow_mcp/clients/",
+]
+
+[[tool.mypy.overrides]]
+module = "astro_airflow_mcp.clients.*"
+ignore_errors = true

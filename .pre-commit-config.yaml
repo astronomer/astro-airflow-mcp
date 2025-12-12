@@ -37,7 +37,11 @@ repos:
       - id: mypy
         additional_dependencies:
           - types-requests
-        args: [--ignore-missing-imports, --no-strict-optional]
+          - types-python-dateutil
+          - httpx
+          - attrs
+          - packaging
+        args: [--config-file=pyproject.toml]
         exclude: ^tests/
 
   # Security checks

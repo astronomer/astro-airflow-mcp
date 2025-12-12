@@ -37,7 +37,9 @@ from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.variable import 
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.version import get_version
 
 # Import v3 client
-from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.client import Client
+from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.client import (
+    AuthenticatedClient,
+)
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.models.http_validation_error import (
     HTTPValidationError,
 )
@@ -80,7 +82,12 @@ class AirflowV3Adapter(AirflowAdapter):
             timeout=30.0,
         )
 
-        self.client = Client(base_url=airflow_url, headers=headers, timeout=30.0)
+        self.client = AuthenticatedClient(
+            base_url=airflow_url,
+            token="",
+            headers=headers,
+            timeout=httpx.Timeout(30.0),  # nosec B106
+        )
         self.client.set_httpx_client(httpx_client)
 
     def list_dags(self, limit: int = 100, offset: int = 0, **kwargs) -> dict[str, Any]:

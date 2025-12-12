@@ -48,7 +48,7 @@ def detect_airflow_version(
         headers["Authorization"] = f"Bearer {auth_token}"
 
     # Try both API versions (v2 for Airflow 3.x, v1 for Airflow 2.x)
-    last_error = None
+    last_error: Exception | None = None
     empty_version_found = False
 
     for api_version in ["v2", "v1"]:
@@ -75,7 +75,8 @@ def detect_airflow_version(
             logger.info(
                 f"Detected Airflow {major}.x (full version: {version_string}) via /api/{api_version}/version"
             )
-            return major, version_string
+            # Cast to AirflowMajorVersion since we've verified it's 2 or 3
+            return major, version_string  # type: ignore[return-value]
 
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:

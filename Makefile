@@ -49,8 +49,8 @@ format:  ## Format code with ruff - auto-fixes issues
 	uv run ruff format src/ tests/
 	uv run ruff check --fix src/ tests/
 
-type-check:  ## Run type checking (mypy) - excludes tests
-	uv run mypy src/astro_airflow_mcp/ --ignore-missing-imports --no-strict-optional
+type-check:  ## Run type checking (mypy) - excludes tests and generated clients
+	uv run mypy src/astro_airflow_mcp/
 
 security:  ## Run security checks (bandit) - excludes tests
 	uv run bandit -c pyproject.toml -r src/astro_airflow_mcp/

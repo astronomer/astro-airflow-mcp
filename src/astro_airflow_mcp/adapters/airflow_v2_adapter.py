@@ -36,7 +36,9 @@ from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.api.variable import 
 )
 
 # Import v2 client
-from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.client import Client
+from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.client import (
+    AuthenticatedClient,
+)
 from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.models.error import Error
 
 
@@ -77,7 +79,12 @@ class AirflowV2Adapter(AirflowAdapter):
             timeout=30.0,
         )
 
-        self.client = Client(base_url=base_url_with_api, headers=headers, timeout=30.0)
+        self.client = AuthenticatedClient(
+            base_url=base_url_with_api,
+            token="",
+            headers=headers,
+            timeout=httpx.Timeout(30.0),  # nosec B106
+        )
         self.client.set_httpx_client(httpx_client)
 
     def list_dags(self, limit: int = 100, offset: int = 0, **kwargs) -> dict[str, Any]:
@@ -174,7 +181,7 @@ class AirflowV2Adapter(AirflowAdapter):
             # Create DAG run body
             body = DAGRun()
             if conf:
-                body.conf = conf
+                body.conf = conf  # type: ignore[assignment]
 
             result = post_dag_run.sync(dag_id=dag_id, client=self.client, body=body)
             if isinstance(result, Error):
