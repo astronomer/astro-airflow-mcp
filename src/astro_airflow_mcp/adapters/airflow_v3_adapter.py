@@ -48,71 +48,38 @@ from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.models.http_validati
 class AirflowV3Adapter(AirflowAdapter):
     """Adapter for Airflow 3.x API using generated client."""
 
-    def __init__(
-        self,
-        airflow_url: str,
-        auth_token: str | None = None,
-        username: str | None = None,
-        password: str | None = None,
-    ):
-        super().__init__(airflow_url, auth_token, username, password)
+    @property
+    def error_type(self) -> type:
+        """Error type for Airflow 3.x API."""
+        return HTTPValidationError
 
-        # Initialize the generated v3 client
-        # Airflow 3.x uses /api/v2 as the base path
-        headers = {}
-        auth = None
+    @property
+    def api_base_path(self) -> str:
+        """API base path for Airflow 3.x."""
+        return ""
 
-        # Set up authentication - Airflow 3.x can use either method
-        if username and password:
-            # Use basic auth
-            auth = (username, password)
-        elif auth_token:
-            # Use Bearer token auth
-            headers["Authorization"] = f"Bearer {auth_token}"
-
-        # Get the underlying httpx client with auth
-        # Note: base_url should NOT include /api/v2 because the generated
-        # client paths already include it (e.g., "/api/v2/dags")
-        import httpx
-
-        httpx_client = httpx.Client(
-            base_url=airflow_url,
-            headers=headers,
-            auth=auth,
-            timeout=30.0,
-        )
-
-        self.client = AuthenticatedClient(
-            base_url=airflow_url,
-            token="",
-            headers=headers,
-            timeout=httpx.Timeout(30.0),  # nosec B106
-        )
-        self.client.set_httpx_client(httpx_client)
+    def _get_authenticated_client_class(self) -> type:
+        """Get AuthenticatedClient class for v3."""
+        return AuthenticatedClient
 
     def list_dags(self, limit: int = 100, offset: int = 0, **kwargs) -> dict[str, Any]:
         """List all DAGs using v3 client."""
-        try:
-            result = get_dags.sync(client=self.client, limit=limit, offset=offset)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_dags")
-            if result is None:
-                return {"dags": [], "total_entries": 0}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "list_dags")
+        return self._call_and_handle(
+            get_dags.sync,
+            "list_dags",
+            empty_result={"dags": [], "total_entries": 0},
+            limit=limit,
+            offset=offset,
+        )
 
     def get_dag(self, dag_id: str) -> dict[str, Any]:
         """Get DAG details using v3 client."""
-        try:
-            result = get_dag.sync(dag_id=dag_id, client=self.client)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "get_dag")
-            if result is None:
-                return {"error": "DAG not found"}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "get_dag")
+        return self._call_and_handle(
+            get_dag.sync,
+            "get_dag",
+            empty_result={"error": "DAG not found"},
+            dag_id=dag_id,
+        )
 
     def get_dag_source(self, dag_id: str) -> dict[str, Any]:
         """Get source code of a DAG."""
@@ -136,32 +103,26 @@ class AirflowV3Adapter(AirflowAdapter):
 
         Note: Airflow 3.x also requires dag_id. Use '~' to list runs for all DAGs.
         """
-        try:
-            # Airflow 3 also requires dag_id, use '~' for all DAGs
-            dag_id_param = dag_id if dag_id else "~"
-            result = get_dag_runs.sync(
-                dag_id=dag_id_param, client=self.client, limit=limit, offset=offset
-            )
-
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_dag_runs")
-            if result is None:
-                return {"dag_runs": [], "total_entries": 0}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "list_dag_runs")
+        # Airflow 3 also requires dag_id, use '~' for all DAGs
+        dag_id_param = dag_id if dag_id else "~"
+        return self._call_and_handle(
+            get_dag_runs.sync,
+            "list_dag_runs",
+            empty_result={"dag_runs": [], "total_entries": 0},
+            dag_id=dag_id_param,
+            limit=limit,
+            offset=offset,
+        )
 
     def get_dag_run(self, dag_id: str, dag_run_id: str) -> dict[str, Any]:
         """Get details of a specific DAG run."""
-        try:
-            result = get_dag_run.sync(dag_id=dag_id, dag_run_id=dag_run_id, client=self.client)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "get_dag_run")
-            if result is None:
-                return {"error": "DAG run not found"}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "get_dag_run")
+        return self._call_and_handle(
+            get_dag_run.sync,
+            "get_dag_run",
+            empty_result={"error": "DAG run not found"},
+            dag_id=dag_id,
+            dag_run_id=dag_run_id,
+        )
 
     def trigger_dag(self, dag_id: str, conf: dict | None = None) -> dict[str, Any]:
         """Trigger a new DAG run."""
@@ -186,123 +147,91 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_tasks(self, dag_id: str) -> dict[str, Any]:
         """List all tasks in a DAG."""
-        try:
-            result = get_tasks.sync(dag_id=dag_id, client=self.client)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_tasks")
-            if result is None:
-                return {"tasks": [], "total_entries": 0}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "list_tasks")
+        return self._call_and_handle(
+            get_tasks.sync,
+            "list_tasks",
+            empty_result={"tasks": [], "total_entries": 0},
+            dag_id=dag_id,
+        )
 
     def get_task(self, dag_id: str, task_id: str) -> dict[str, Any]:
         """Get details of a specific task."""
-        try:
-            result = get_task.sync(dag_id=dag_id, task_id=task_id, client=self.client)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "get_task")
-            if result is None:
-                return {"error": "Task not found"}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "get_task")
+        return self._call_and_handle(
+            get_task.sync,
+            "get_task",
+            empty_result={"error": "Task not found"},
+            dag_id=dag_id,
+            task_id=task_id,
+        )
 
     def get_task_instance(self, dag_id: str, dag_run_id: str, task_id: str) -> dict[str, Any]:
         """Get details of a task instance."""
-        try:
-            result = get_task_instance.sync(
-                dag_id=dag_id, dag_run_id=dag_run_id, task_id=task_id, client=self.client
-            )
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "get_task_instance")
-            if result is None:
-                return {"error": "Task instance not found"}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "get_task_instance")
+        return self._call_and_handle(
+            get_task_instance.sync,
+            "get_task_instance",
+            empty_result={"error": "Task instance not found"},
+            dag_id=dag_id,
+            dag_run_id=dag_run_id,
+            task_id=task_id,
+        )
 
     def list_assets(self, limit: int = 100, offset: int = 0, **kwargs) -> dict[str, Any]:
         """List assets using v3 client (uses scheduled_dags natively)."""
-        try:
-            result = get_assets.sync(client=self.client, limit=limit, offset=offset)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_assets")
-            if result is None:
-                return {"assets": [], "total_entries": 0}
-            # v3 already uses 'assets' and 'scheduled_dags', no normalization needed
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "list_assets")
+        return self._call_and_handle(
+            get_assets.sync,
+            "list_assets",
+            empty_result={"assets": [], "total_entries": 0},
+            limit=limit,
+            offset=offset,
+        )
 
     def list_variables(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List Airflow variables."""
-        try:
-            result = get_variables.sync(client=self.client, limit=limit, offset=offset)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_variables")
-            if result is None:
-                return {"variables": [], "total_entries": 0}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "list_variables")
+        return self._call_and_handle(
+            get_variables.sync,
+            "list_variables",
+            empty_result={"variables": [], "total_entries": 0},
+            limit=limit,
+            offset=offset,
+        )
 
     def get_variable(self, variable_key: str) -> dict[str, Any]:
         """Get a specific variable."""
-        try:
-            result = get_variable.sync(variable_key=variable_key, client=self.client)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "get_variable")
-            if result is None:
-                return {"error": "Variable not found"}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "get_variable")
+        return self._call_and_handle(
+            get_variable.sync,
+            "get_variable",
+            empty_result={"error": "Variable not found"},
+            variable_key=variable_key,
+        )
 
     def list_connections(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List Airflow connections (passwords filtered)."""
-        try:
-            result = get_connections.sync(client=self.client, limit=limit, offset=offset)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_connections")
-            if result is None:
-                return {"connections": [], "total_entries": 0}
-
-            data = result.to_dict()
-
-            # Filter out password fields for security
-            if "connections" in data:
-                for conn in data["connections"]:
-                    if "password" in conn:
-                        conn["password"] = "***FILTERED***"  # nosec B105
-
-            return data
-        except Exception as e:
-            return self._handle_error(e, "list_connections")
+        result = self._call_and_handle(
+            get_connections.sync,
+            "list_connections",
+            empty_result={"connections": [], "total_entries": 0},
+            limit=limit,
+            offset=offset,
+        )
+        return self._filter_passwords(result)
 
     def list_pools(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List Airflow pools."""
-        try:
-            result = get_pools.sync(client=self.client, limit=limit, offset=offset)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_pools")
-            if result is None:
-                return {"pools": [], "total_entries": 0}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "list_pools")
+        return self._call_and_handle(
+            get_pools.sync,
+            "list_pools",
+            empty_result={"pools": [], "total_entries": 0},
+            limit=limit,
+            offset=offset,
+        )
 
     def get_version(self) -> dict[str, Any]:
         """Get Airflow version info."""
-        try:
-            result = get_version.sync(client=self.client)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "get_version")
-            if result is None:
-                return {"error": "Version info not available"}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "get_version")
+        return self._call_and_handle(
+            get_version.sync,
+            "get_version",
+            empty_result={"error": "Version info not available"},
+        )
 
     def get_config(self) -> dict[str, Any]:
         """Get Airflow configuration."""
@@ -322,72 +251,55 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def get_pool(self, pool_name: str) -> dict[str, Any]:
         """Get details of a specific pool."""
-        try:
-            result = get_pool.sync(pool_name=pool_name, client=self.client)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "get_pool")
-            if result is None:
-                return {"error": "Pool not found"}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "get_pool")
+        return self._call_and_handle(
+            get_pool.sync,
+            "get_pool",
+            empty_result={"error": "Pool not found"},
+            pool_name=pool_name,
+        )
 
     def get_dag_stats(self) -> dict[str, Any]:
         """Get DAG run statistics by state."""
-        try:
-            result = get_dag_stats.sync(client=self.client)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "get_dag_stats")
-            if result is None:
-                return {"error": "DAG stats not available"}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "get_dag_stats")
+        return self._call_and_handle(
+            get_dag_stats.sync,
+            "get_dag_stats",
+            empty_result={"error": "DAG stats not available"},
+        )
 
     def list_dag_warnings(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List DAG warnings."""
-        try:
-            result = list_dag_warnings.sync(client=self.client, limit=limit, offset=offset)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_dag_warnings")
-            if result is None:
-                return {"dag_warnings": [], "total_entries": 0}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "list_dag_warnings")
+        return self._call_and_handle(
+            list_dag_warnings.sync,
+            "list_dag_warnings",
+            empty_result={"dag_warnings": [], "total_entries": 0},
+            limit=limit,
+            offset=offset,
+        )
 
     def list_import_errors(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List import errors from DAG files."""
-        try:
-            result = get_import_errors.sync(client=self.client, limit=limit, offset=offset)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_import_errors")
-            if result is None:
-                return {"import_errors": [], "total_entries": 0}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "list_import_errors")
+        return self._call_and_handle(
+            get_import_errors.sync,
+            "list_import_errors",
+            empty_result={"import_errors": [], "total_entries": 0},
+            limit=limit,
+            offset=offset,
+        )
 
     def list_plugins(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List installed Airflow plugins."""
-        try:
-            result = get_plugins.sync(client=self.client, limit=limit, offset=offset)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_plugins")
-            if result is None:
-                return {"plugins": [], "total_entries": 0}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "list_plugins")
+        return self._call_and_handle(
+            get_plugins.sync,
+            "list_plugins",
+            empty_result={"plugins": [], "total_entries": 0},
+            limit=limit,
+            offset=offset,
+        )
 
     def list_providers(self) -> dict[str, Any]:
         """List installed Airflow provider packages."""
-        try:
-            result = get_providers.sync(client=self.client)
-            if isinstance(result, HTTPValidationError):
-                return self._handle_error(result, "list_providers")
-            if result is None:
-                return {"providers": [], "total_entries": 0}
-            return result.to_dict()
-        except Exception as e:
-            return self._handle_error(e, "list_providers")
+        return self._call_and_handle(
+            get_providers.sync,
+            "list_providers",
+            empty_result={"providers": [], "total_entries": 0},
+        )
