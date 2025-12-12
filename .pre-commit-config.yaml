@@ -9,7 +9,9 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^src/astro_airflow_mcp/clients/
       - id: end-of-file-fixer
+        exclude: ^src/astro_airflow_mcp/clients/
       - id: check-yaml
       - id: check-toml
       - id: check-added-large-files
@@ -18,7 +20,9 @@ repos:
       - id: check-case-conflict
       - id: mixed-line-ending
         args: ['--fix=lf']
+        exclude: ^src/astro_airflow_mcp/clients/
       - id: check-docstring-first
+        exclude: ^src/astro_airflow_mcp/clients/
 
   # Python code formatting with ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -27,8 +31,10 @@ repos:
       # Run the linter
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix]
+        exclude: ^src/astro_airflow_mcp/clients/
       # Run the formatter
       - id: ruff-format
+        exclude: ^src/astro_airflow_mcp/clients/
 
   # Type checking with mypy
   - repo: https://github.com/pre-commit/mirrors-mypy
