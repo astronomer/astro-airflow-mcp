@@ -287,13 +287,14 @@ wheels = [
 
 [[package]]
 name = "astro-airflow-mcp"
-version = "0.1.6.dev1+g689fa21bb.d20251212"
+version = "0.1.6.dev3+g882b91bf3.d20251212"
 source = { editable = "." }
 dependencies = [
     { name = "attrs" },
     { name = "fastmcp" },
     { name = "httpx" },
     { name = "packaging" },
+    { name = "python-dateutil" },
 ]
 
 [package.optional-dependencies]
@@ -322,6 +323,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=0.1.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "packaging", specifier = ">=23.0" },
+    { name = "python-dateutil", specifier = ">=2.8.0" },
 ]
 
 [package.metadata.dependency-groups]
