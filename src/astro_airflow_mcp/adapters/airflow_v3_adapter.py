@@ -3,15 +3,12 @@
 from typing import Any
 
 from astro_airflow_mcp.adapters.base import AirflowAdapter
+
+# Import v3 API function modules
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.asset import get_assets
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.config import get_config
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.connection import get_connections
-
-# Import v3 API functions
-from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.dag import (
-    get_dag,
-    get_dags,
-)
+from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.dag import get_dag, get_dags
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.dag_run import (
     get_dag_run,
     get_dag_runs,
@@ -19,7 +16,9 @@ from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.dag_run import (
 )
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.dag_source import get_dag_source
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.dag_stats import get_dag_stats
-from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.dag_warning import list_dag_warnings
+from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.dag_warning import (
+    list_dag_warnings,
+)
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.import_error import (
     get_import_errors,
 )
@@ -35,13 +34,12 @@ from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.variable import 
     get_variables,
 )
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.api.version import get_version
-
-# Import v3 client
-from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.client import (
-    AuthenticatedClient,
-)
+from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.client import AuthenticatedClient
 from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.models.http_validation_error import (
     HTTPValidationError,
+)
+from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.models.trigger_dag_run_post_body import (
+    TriggerDAGRunPostBody,
 )
 
 
@@ -127,14 +125,10 @@ class AirflowV3Adapter(AirflowAdapter):
     def trigger_dag(self, dag_id: str, conf: dict | None = None) -> dict[str, Any]:
         """Trigger a new DAG run."""
         try:
-            from astro_airflow_mcp.clients.airflow_v3.airflow_v3_client.models.dag_run_body import (
-                DAGRunBody,
-            )
-
             # Create DAG run body
-            body = DAGRunBody()
+            body = TriggerDAGRunPostBody(logical_date=None)
             if conf:
-                body.conf = conf
+                body.conf = conf  # type: ignore[assignment]
 
             result = trigger_dag_run.sync(dag_id=dag_id, client=self.client, body=body)
             if isinstance(result, HTTPValidationError):

@@ -3,9 +3,9 @@
 from typing import Any
 
 from astro_airflow_mcp.adapters.base import AirflowAdapter
-from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.api.connection import get_connections
 
-# Import v2 API functions
+# Import v2 API function modules
+from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.api.connection import get_connections
 from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.api.dag import (
     get_dag,
     get_dag_source,
@@ -18,7 +18,9 @@ from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.api.dag_run import (
     get_dag_runs,
     post_dag_run,
 )
-from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.api.dag_warning import get_dag_warnings
+from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.api.dag_warning import (
+    get_dag_warnings,
+)
 from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.api.dataset import get_datasets
 from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.api.import_error import (
     get_import_errors,
@@ -34,11 +36,8 @@ from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.api.variable import 
     get_variable,
     get_variables,
 )
-
-# Import v2 client
-from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.client import (
-    AuthenticatedClient,
-)
+from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.client import AuthenticatedClient
+from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.models.dag_run import DAGRun
 from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.models.error import Error
 
 
@@ -137,8 +136,6 @@ class AirflowV2Adapter(AirflowAdapter):
     def trigger_dag(self, dag_id: str, conf: dict | None = None) -> dict[str, Any]:
         """Trigger a new DAG run."""
         try:
-            from astro_airflow_mcp.clients.airflow_v2.airflow_v2_client.models.dag_run import DAGRun
-
             # Create DAG run body
             body = DAGRun()
             if conf:
