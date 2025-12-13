@@ -112,14 +112,14 @@ class AirflowAdapter(ABC):
 
         return headers, auth
 
-    def _call_and_handle(
+    def _execute(
         self,
         client_func: Callable,
         operation_name: str,
         empty_result: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Common pattern for calling generated client and handling errors.
+        """Execute a client function with error handling.
 
         Args:
             client_func: Generated client function to call

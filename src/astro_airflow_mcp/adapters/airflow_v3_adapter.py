@@ -64,7 +64,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_dags(self, limit: int = 100, offset: int = 0, **kwargs) -> dict[str, Any]:
         """List all DAGs using v3 client."""
-        return self._call_and_handle(
+        return self._execute(
             get_dags.sync,
             "list_dags",
             empty_result={"dags": [], "total_entries": 0},
@@ -74,7 +74,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def get_dag(self, dag_id: str) -> dict[str, Any]:
         """Get DAG details using v3 client."""
-        return self._call_and_handle(
+        return self._execute(
             get_dag.sync,
             "get_dag",
             empty_result={"error": "DAG not found"},
@@ -105,7 +105,7 @@ class AirflowV3Adapter(AirflowAdapter):
         """
         # Airflow 3 also requires dag_id, use '~' for all DAGs
         dag_id_param = dag_id if dag_id else "~"
-        return self._call_and_handle(
+        return self._execute(
             get_dag_runs.sync,
             "list_dag_runs",
             empty_result={"dag_runs": [], "total_entries": 0},
@@ -116,7 +116,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def get_dag_run(self, dag_id: str, dag_run_id: str) -> dict[str, Any]:
         """Get details of a specific DAG run."""
-        return self._call_and_handle(
+        return self._execute(
             get_dag_run.sync,
             "get_dag_run",
             empty_result={"error": "DAG run not found"},
@@ -147,7 +147,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_tasks(self, dag_id: str) -> dict[str, Any]:
         """List all tasks in a DAG."""
-        return self._call_and_handle(
+        return self._execute(
             get_tasks.sync,
             "list_tasks",
             empty_result={"tasks": [], "total_entries": 0},
@@ -156,7 +156,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def get_task(self, dag_id: str, task_id: str) -> dict[str, Any]:
         """Get details of a specific task."""
-        return self._call_and_handle(
+        return self._execute(
             get_task.sync,
             "get_task",
             empty_result={"error": "Task not found"},
@@ -166,7 +166,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def get_task_instance(self, dag_id: str, dag_run_id: str, task_id: str) -> dict[str, Any]:
         """Get details of a task instance."""
-        return self._call_and_handle(
+        return self._execute(
             get_task_instance.sync,
             "get_task_instance",
             empty_result={"error": "Task instance not found"},
@@ -177,7 +177,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_assets(self, limit: int = 100, offset: int = 0, **kwargs) -> dict[str, Any]:
         """List assets using v3 client (uses scheduled_dags natively)."""
-        return self._call_and_handle(
+        return self._execute(
             get_assets.sync,
             "list_assets",
             empty_result={"assets": [], "total_entries": 0},
@@ -187,7 +187,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_variables(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List Airflow variables."""
-        return self._call_and_handle(
+        return self._execute(
             get_variables.sync,
             "list_variables",
             empty_result={"variables": [], "total_entries": 0},
@@ -197,7 +197,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def get_variable(self, variable_key: str) -> dict[str, Any]:
         """Get a specific variable."""
-        return self._call_and_handle(
+        return self._execute(
             get_variable.sync,
             "get_variable",
             empty_result={"error": "Variable not found"},
@@ -206,7 +206,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_connections(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List Airflow connections (passwords filtered)."""
-        result = self._call_and_handle(
+        result = self._execute(
             get_connections.sync,
             "list_connections",
             empty_result={"connections": [], "total_entries": 0},
@@ -217,7 +217,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_pools(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List Airflow pools."""
-        return self._call_and_handle(
+        return self._execute(
             get_pools.sync,
             "list_pools",
             empty_result={"pools": [], "total_entries": 0},
@@ -227,7 +227,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def get_version(self) -> dict[str, Any]:
         """Get Airflow version info."""
-        return self._call_and_handle(
+        return self._execute(
             get_version.sync,
             "get_version",
             empty_result={"error": "Version info not available"},
@@ -251,7 +251,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def get_pool(self, pool_name: str) -> dict[str, Any]:
         """Get details of a specific pool."""
-        return self._call_and_handle(
+        return self._execute(
             get_pool.sync,
             "get_pool",
             empty_result={"error": "Pool not found"},
@@ -260,7 +260,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def get_dag_stats(self) -> dict[str, Any]:
         """Get DAG run statistics by state."""
-        return self._call_and_handle(
+        return self._execute(
             get_dag_stats.sync,
             "get_dag_stats",
             empty_result={"error": "DAG stats not available"},
@@ -268,7 +268,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_dag_warnings(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List DAG warnings."""
-        return self._call_and_handle(
+        return self._execute(
             list_dag_warnings.sync,
             "list_dag_warnings",
             empty_result={"dag_warnings": [], "total_entries": 0},
@@ -278,7 +278,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_import_errors(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List import errors from DAG files."""
-        return self._call_and_handle(
+        return self._execute(
             get_import_errors.sync,
             "list_import_errors",
             empty_result={"import_errors": [], "total_entries": 0},
@@ -288,7 +288,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_plugins(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List installed Airflow plugins."""
-        return self._call_and_handle(
+        return self._execute(
             get_plugins.sync,
             "list_plugins",
             empty_result={"plugins": [], "total_entries": 0},
@@ -298,7 +298,7 @@ class AirflowV3Adapter(AirflowAdapter):
 
     def list_providers(self) -> dict[str, Any]:
         """List installed Airflow provider packages."""
-        return self._call_and_handle(
+        return self._execute(
             get_providers.sync,
             "list_providers",
             empty_result={"providers": [], "total_entries": 0},
