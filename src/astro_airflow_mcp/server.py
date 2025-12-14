@@ -630,6 +630,116 @@ def list_dag_runs() -> str:
     return _list_dag_runs_impl()
 
 
+def _get_dag_run_impl(dag_id: str, dag_run_id: str) -> str:
+    """Internal implementation for getting a specific DAG run from Airflow.
+
+    Args:
+        dag_id: The ID of the DAG
+        dag_run_id: The ID of the DAG run
+
+    Returns:
+        JSON string containing the DAG run details
+    """
+    try:
+        data = _config.adapter.get_dag_run(dag_id, dag_run_id)
+        return json.dumps(data, indent=2)
+    except Exception as e:
+        return str(e)
+
+
+@mcp.tool()
+def get_dag_run(dag_id: str, dag_run_id: str) -> str:
+    """Get detailed information about a specific DAG run execution.
+
+    Use this tool when the user asks about:
+    - "Show me details for DAG run X" or "What's the status of run Y?"
+    - "When did this run start/finish?" or "How long did run Z take?"
+    - "Why did this run fail?" or "Get execution details for run X"
+    - "What was the configuration for this run?" or "Show me run metadata"
+    - "What's the state of DAG run X?" or "Did run Y succeed?"
+
+    Returns detailed information about a specific DAG run execution including:
+    - dag_run_id: Unique identifier for this execution
+    - dag_id: Which DAG this run belongs to
+    - state: Current state (running, success, failed, queued, etc.)
+    - execution_date: When this run was scheduled to execute
+    - start_date: When execution actually started
+    - end_date: When execution completed (if finished)
+    - duration: How long the run took (in seconds)
+    - run_type: Type of run (manual, scheduled, backfill, etc.)
+    - conf: Configuration parameters passed to this run
+    - external_trigger: Whether this was triggered externally
+    - data_interval_start: Start of the data interval
+    - data_interval_end: End of the data interval
+    - last_scheduling_decision: Last scheduling decision timestamp
+    - note: Optional note attached to the run
+
+    Args:
+        dag_id: The ID of the DAG (e.g., "example_dag")
+        dag_run_id: The ID of the DAG run (e.g., "manual__2024-01-01T00:00:00+00:00")
+
+    Returns:
+        JSON with complete details about the specified DAG run
+    """
+    return _get_dag_run_impl(dag_id=dag_id, dag_run_id=dag_run_id)
+
+
+def _trigger_dag_impl(dag_id: str, conf: dict | None = None) -> str:
+    """Internal implementation for triggering a new DAG run.
+
+    Args:
+        dag_id: The ID of the DAG to trigger
+        conf: Optional configuration dictionary to pass to the DAG run
+
+    Returns:
+        JSON string containing the triggered DAG run details
+    """
+    try:
+        data = _config.adapter.trigger_dag(dag_id, conf=conf)
+        return json.dumps(data, indent=2)
+    except Exception as e:
+        return str(e)
+
+
+@mcp.tool()
+def trigger_dag(dag_id: str, conf: dict | None = None) -> str:
+    """Trigger a new DAG run (start a workflow execution manually).
+
+    Use this tool when the user asks to:
+    - "Run DAG X" or "Start DAG Y" or "Execute DAG Z"
+    - "Trigger a run of DAG X" or "Kick off DAG Y"
+    - "Run this workflow" or "Start this pipeline"
+    - "Execute DAG X with config Y" or "Trigger DAG with parameters"
+    - "Start a manual run" or "Manually execute this DAG"
+
+    This creates a new DAG run that will be picked up by the scheduler and executed.
+    You can optionally pass configuration parameters that will be available to the
+    DAG during execution via the `conf` context variable.
+
+    IMPORTANT: This is a write operation that modifies Airflow state by creating
+    a new DAG run. Use with caution.
+
+    Returns information about the newly triggered DAG run including:
+    - dag_run_id: Unique identifier for the new execution
+    - dag_id: Which DAG was triggered
+    - state: Initial state (typically 'queued')
+    - execution_date: When this run is scheduled to execute
+    - start_date: When execution started (may be null if queued)
+    - run_type: Type of run (will be 'manual')
+    - conf: Configuration passed to the run
+    - external_trigger: Set to true for manual triggers
+
+    Args:
+        dag_id: The ID of the DAG to trigger (e.g., "example_dag")
+        conf: Optional configuration dictionary to pass to the DAG run.
+              This will be available in the DAG via context['dag_run'].conf
+
+    Returns:
+        JSON with details about the newly triggered DAG run
+    """
+    return _trigger_dag_impl(dag_id=dag_id, conf=conf)
+
+
 def _list_assets_impl(limit: int = DEFAULT_LIMIT, offset: int = DEFAULT_OFFSET) -> str:
     """Internal implementation for listing assets from Airflow.
 
