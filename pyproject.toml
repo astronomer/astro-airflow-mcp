@@ -6,12 +6,15 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "fastmcp>=0.1.0",
-    "requests>=2.31.0",
+    "httpx>=0.27.0",
+    "attrs>=23.0.0",
+    "packaging>=23.0",
+    "python-dateutil>=2.8.0",
 ]
 
 [project.optional-dependencies]
 plugin = [
-    "apache-airflow>=3.0.0",
+    "apache-airflow>=2.9.0,<4.0.0",
     "fastapi>=0.100.0",
 ]
 
@@ -44,6 +47,7 @@ dev-dependencies = [
     "mypy>=1.8.0",
     "bandit[toml]>=1.7.0",
     "types-requests>=2.31.0",
+    "openapi-python-client>=0.21.0",
 ]
 
 [tool.ruff]
@@ -75,3 +79,17 @@ ignore = [
 [tool.bandit]
 exclude_dirs = ["tests", "examples"]
 skips = ["B101"]  # Skip assert_used check (common in tests)
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+no_strict_optional = true
+exclude = [
+    "src/astro_airflow_mcp/clients/",
+]
+
+[[tool.mypy.overrides]]
+module = "astro_airflow_mcp.clients.*"
+ignore_errors = true

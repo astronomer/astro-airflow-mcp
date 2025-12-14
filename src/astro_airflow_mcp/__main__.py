@@ -46,23 +46,44 @@ def main():
         "--auth-token",
         type=str,
         default=os.getenv("AIRFLOW_AUTH_TOKEN"),
-        help="Bearer token for Airflow API authentication",
+        help="Bearer token for Airflow API authentication (alternative to username/password)",
+    )
+    parser.add_argument(
+        "--username",
+        type=str,
+        default=None,
+        help="Username for basic authentication (optional, Airflow 2 defaults to 'admin')",
+    )
+    parser.add_argument(
+        "--password",
+        type=str,
+        default=None,
+        help="Password for basic authentication (optional, Airflow 2 defaults to 'admin')",
     )
 
     args = parser.parse_args()
 
+    # Check environment variables if not provided via CLI
+    username = args.username or os.getenv("AIRFLOW_USERNAME")
+    password = args.password or os.getenv("AIRFLOW_PASSWORD")
+    auth_token = args.auth_token or os.getenv("AIRFLOW_AUTH_TOKEN")
+
     # Configure Airflow connection settings
     configure(
         url=args.airflow_url,
-        auth_token=args.auth_token,
+        auth_token=auth_token,
+        username=username,
+        password=password,
     )
 
     # Log Airflow connection configuration
     logger.info(f"Airflow URL: {args.airflow_url}")
-    if args.auth_token:
+    if auth_token:
         logger.info("Authentication: Bearer token")
+    elif username and password:
+        logger.info(f"Authentication: Basic auth (username: {username})")
     else:
-        logger.info("Authentication: None")
+        logger.info("Authentication: None (will use version-specific defaults)")
 
     # Run the server with specified transport
     if args.transport == "http":

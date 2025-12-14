@@ -1,0 +1,4 @@
+# OpenAPI Python Client configuration for Airflow 3.1.3
+project_name_override: "airflow_v3"
+package_name_override: "airflow_v3_client"
+use_path_prefixes_for_title_model_names: false
