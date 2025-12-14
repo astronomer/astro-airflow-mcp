@@ -1,5 +1,9 @@
 # Makefile for airflow-mcp development
 
+# Airflow versions for OpenAPI spec downloads and client generation
+AIRFLOW_V2_VERSION = 2.9.0
+AIRFLOW_V3_VERSION = 3.1.3
+
 .PHONY: help install install-dev install-dev-ci install-hooks run docker-build docker-run build test lint format type-check security check clean pre-commit
 
 help:  ## Show this help message
@@ -76,17 +80,19 @@ clean:  ## Clean up build artifacts and cache files
 
 download-specs:  ## Download OpenAPI specs from Airflow releases
 	@echo "Downloading OpenAPI specifications..."
+	@echo "  Airflow v2: $(AIRFLOW_V2_VERSION)"
+	@echo "  Airflow v3: $(AIRFLOW_V3_VERSION)"
 	@mkdir -p openapi_specs
-	curl -L https://raw.githubusercontent.com/apache/airflow/2.9.0/airflow/api_connexion/openapi/v1.yaml \
-		-o openapi_specs/airflow-2.9.0-spec.yaml
-	curl -L https://raw.githubusercontent.com/apache/airflow/3.1.3/airflow-core/src/airflow/api_fastapi/core_api/openapi/v2-rest-api-generated.yaml \
-		-o openapi_specs/airflow-3.1.3-spec.yaml
+	curl -L https://raw.githubusercontent.com/apache/airflow/$(AIRFLOW_V2_VERSION)/airflow/api_connexion/openapi/v1.yaml \
+		-o openapi_specs/airflow-$(AIRFLOW_V2_VERSION)-spec.yaml
+	curl -L https://raw.githubusercontent.com/apache/airflow/$(AIRFLOW_V3_VERSION)/airflow-core/src/airflow/api_fastapi/core_api/openapi/v2-rest-api-generated.yaml \
+		-o openapi_specs/airflow-$(AIRFLOW_V3_VERSION)-spec.yaml
 	@echo "✓ Specs downloaded to openapi_specs/"
 
 generate-clients: download-specs  ## Generate Python clients from OpenAPI specs
 	@echo "Generating API clients..."
 	chmod +x scripts/generate_clients.sh
-	./scripts/generate_clients.sh
+	./scripts/generate_clients.sh $(AIRFLOW_V2_VERSION) $(AIRFLOW_V3_VERSION)
 
 setup: install-dev install-hooks generate-clients  ## Complete setup (install dev deps + hooks + generate clients)
 	@echo "✓ Development environment ready"
