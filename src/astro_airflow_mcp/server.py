@@ -2105,3 +2105,373 @@ def get_airflow_config() -> str:
         airflow_url=_config.url,
         auth_token=_config.auth_token,
     )
+
+
+# =============================================================================
+# CONSOLIDATED TOOLS (Agent-optimized for complex investigations)
+# =============================================================================
+
+
+@mcp.tool()
+def explore_dag(dag_id: str) -> str:
+    """Comprehensive investigation of a DAG - get all relevant info in one call.
+
+    USE THIS TOOL WHEN you need to understand a DAG completely. Instead of making
+    multiple calls, this returns everything about a DAG in a single response.
+
+    This is the preferred first tool when:
+    - User asks "Tell me about DAG X" or "What is this DAG?"
+    - You need to understand a DAG's structure before diagnosing issues
+    - You want to know the schedule, tasks, and source code together
+
+    Returns combined data:
+    - DAG metadata (schedule, owners, tags, paused status)
+    - All tasks with their operators and dependencies
+    - DAG source code
+    - Any import errors or warnings for this DAG
+
+    Args:
+        dag_id: The ID of the DAG to explore
+
+    Returns:
+        JSON with comprehensive DAG information
+    """
+    result: dict[str, Any] = {"dag_id": dag_id}
+
+    # Get DAG details
+    try:
+        dag_data = _call_airflow_api(
+            f"dags/{dag_id}",
+            _config.url,
+        )
+        result["dag_info"] = dag_data
+    except Exception as e:
+        result["dag_info"] = {"error": str(e)}
+
+    # Get tasks
+    try:
+        tasks_data = _call_airflow_api(
+            f"dags/{dag_id}/tasks",
+            _config.url,
+        )
+        result["tasks"] = tasks_data.get("tasks", [])
+    except Exception as e:
+        result["tasks"] = {"error": str(e)}
+
+    # Get DAG source
+    try:
+        source_data = _call_airflow_api(
+            f"dagSources/{dag_id}",
+            _config.url,
+        )
+        result["source"] = source_data
+    except Exception as e:
+        result["source"] = {"error": str(e)}
+
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def diagnose_dag_run(dag_id: str, dag_run_id: str) -> str:
+    """Diagnose issues with a specific DAG run - get run details and failed tasks.
+
+    USE THIS TOOL WHEN troubleshooting a failed or problematic DAG run. Returns
+    all the information you need to understand what went wrong.
+
+    This is the preferred tool when:
+    - User asks "Why did this DAG run fail?"
+    - User asks "What's wrong with run X?"
+    - You need to investigate task failures in a specific run
+
+    Returns combined data:
+    - DAG run metadata (state, start/end times, trigger type)
+    - All task instances for this run with their states
+    - Highlighted failed/upstream_failed tasks with details
+    - Summary of task states
+
+    Args:
+        dag_id: The ID of the DAG
+        dag_run_id: The ID of the DAG run (e.g., "manual__2024-01-01T00:00:00+00:00")
+
+    Returns:
+        JSON with diagnostic information about the DAG run
+    """
+    result: dict[str, Any] = {"dag_id": dag_id, "dag_run_id": dag_run_id}
+
+    # Get DAG run details
+    try:
+        run_data = _call_airflow_api(
+            f"dags/{dag_id}/dagRuns/{dag_run_id}",
+            _config.url,
+        )
+        result["run_info"] = run_data
+    except Exception as e:
+        result["run_info"] = {"error": str(e)}
+        return json.dumps(result, indent=2)
+
+    # Get task instances for this run
+    try:
+        tasks_data = _call_airflow_api(
+            f"dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances",
+            _config.url,
+        )
+        task_instances = tasks_data.get("task_instances", [])
+        result["task_instances"] = task_instances
+
+        # Summarize task states
+        state_counts: dict[str, int] = {}
+        failed_tasks = []
+        for ti in task_instances:
+            state = ti.get("state", "unknown")
+            state_counts[state] = state_counts.get(state, 0) + 1
+            if state in ("failed", "upstream_failed"):
+                failed_tasks.append(
+                    {
+                        "task_id": ti.get("task_id"),
+                        "state": state,
+                        "start_date": ti.get("start_date"),
+                        "end_date": ti.get("end_date"),
+                        "try_number": ti.get("try_number"),
+                    }
+                )
+
+        result["summary"] = {
+            "total_tasks": len(task_instances),
+            "state_counts": state_counts,
+            "failed_tasks": failed_tasks,
+        }
+    except Exception as e:
+        result["task_instances"] = {"error": str(e)}
+
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def get_system_health() -> str:
+    """Get overall Airflow system health - import errors, warnings, and DAG stats.
+
+    USE THIS TOOL WHEN you need a quick health check of the Airflow system.
+    Returns a consolidated view of potential issues across the entire system.
+
+    This is the preferred tool when:
+    - User asks "Are there any problems with Airflow?"
+    - User asks "Show me the system health" or "Any errors?"
+    - You want to do a morning health check
+    - You're starting an investigation and want to see the big picture
+
+    Returns combined data:
+    - Import errors (DAG files that failed to parse)
+    - DAG warnings (deprecations, configuration issues)
+    - DAG statistics (run counts by state) if available
+    - Version information
+
+    Returns:
+        JSON with system health overview
+    """
+    result: dict[str, Any] = {}
+
+    # Get version info
+    try:
+        version_data = _call_airflow_api(
+            "version",
+            _config.url,
+        )
+        result["version"] = version_data
+    except Exception as e:
+        result["version"] = {"error": str(e)}
+
+    # Get import errors
+    try:
+        errors_data = _call_airflow_api(
+            "importErrors",
+            _config.url,
+            params={"limit": 100},
+        )
+        import_errors = errors_data.get("import_errors", [])
+        result["import_errors"] = {
+            "count": len(import_errors),
+            "errors": import_errors,
+        }
+    except Exception as e:
+        result["import_errors"] = {"error": str(e)}
+
+    # Get DAG warnings
+    try:
+        warnings_data = _call_airflow_api(
+            "dagWarnings",
+            _config.url,
+            params={"limit": 100},
+        )
+        dag_warnings = warnings_data.get("dag_warnings", [])
+        result["dag_warnings"] = {
+            "count": len(dag_warnings),
+            "warnings": dag_warnings,
+        }
+    except Exception as e:
+        result["dag_warnings"] = {"error": str(e)}
+
+    # Get DAG stats (Airflow 3.x only)
+    try:
+        stats_data = _call_airflow_api(
+            "dagStats",
+            _config.url,
+        )
+        result["dag_stats"] = stats_data
+    except Exception:
+        result["dag_stats"] = {"available": False, "note": "dagStats endpoint not available"}
+
+    # Calculate overall health status
+    import_error_count = result.get("import_errors", {}).get("count", 0)
+    warning_count = result.get("dag_warnings", {}).get("count", 0)
+
+    if import_error_count > 0:
+        result["overall_status"] = "unhealthy"
+        result["status_reason"] = f"{import_error_count} import error(s) detected"
+    elif warning_count > 0:
+        result["overall_status"] = "warning"
+        result["status_reason"] = f"{warning_count} DAG warning(s) detected"
+    else:
+        result["overall_status"] = "healthy"
+        result["status_reason"] = "No import errors or warnings"
+
+    return json.dumps(result, indent=2)
+
+
+# =============================================================================
+# MCP RESOURCES (Static, read-only information)
+# =============================================================================
+
+
+@mcp.resource("airflow://version")
+def resource_version() -> str:
+    """Get Airflow version information as a resource."""
+    return _get_version_impl(
+        airflow_url=_config.url,
+        auth_token=_config.auth_token,
+    )
+
+
+@mcp.resource("airflow://providers")
+def resource_providers() -> str:
+    """Get installed Airflow providers as a resource."""
+    return _list_providers_impl(
+        airflow_url=_config.url,
+        auth_token=_config.auth_token,
+    )
+
+
+@mcp.resource("airflow://plugins")
+def resource_plugins() -> str:
+    """Get installed Airflow plugins as a resource."""
+    return _list_plugins_impl(
+        airflow_url=_config.url,
+        auth_token=_config.auth_token,
+    )
+
+
+@mcp.resource("airflow://config")
+def resource_config() -> str:
+    """Get Airflow configuration as a resource."""
+    return _get_config_impl(
+        airflow_url=_config.url,
+        auth_token=_config.auth_token,
+    )
+
+
+# =============================================================================
+# MCP PROMPTS (Guided workflows)
+# =============================================================================
+
+
+@mcp.prompt()
+def troubleshoot_failed_dag(dag_id: str) -> str:
+    """Step-by-step guide to troubleshoot a failed DAG.
+
+    Args:
+        dag_id: The DAG ID to troubleshoot
+    """
+    return f"""You are helping troubleshoot failures for DAG '{dag_id}'. Follow these steps:
+
+1. First, use `explore_dag` to understand the DAG structure and check for any import errors.
+
+2. Use `list_dag_runs` (filter by dag_id if possible) to find recent failed runs.
+
+3. For each failed run, use `diagnose_dag_run` to get detailed information about:
+   - Which tasks failed
+   - The state of upstream tasks
+   - Start/end times to understand duration
+
+4. Based on the failed tasks, investigate:
+   - Check task logs if available
+   - Look at task dependencies (upstream_task_ids)
+   - Check if any pools are at capacity using `list_pools`
+
+5. Check system-wide issues using `get_system_health` to see if there are
+   import errors or warnings that might be related.
+
+6. Summarize your findings and provide recommendations for fixing the issues.
+
+Start by running `explore_dag("{dag_id}")` to understand the DAG.
+"""
+
+
+@mcp.prompt()
+def daily_health_check() -> str:
+    """Morning health check workflow for Airflow."""
+    return """You are performing a daily health check on the Airflow system. Follow these steps:
+
+1. Start with `get_system_health` to get an overview of:
+   - Import errors (broken DAG files)
+   - DAG warnings
+   - Overall system status
+
+2. If there are import errors, prioritize investigating those first as they prevent DAGs from running.
+
+3. Use `list_dag_runs` to see recent DAG run activity and identify any failures.
+
+4. Check resource utilization with `list_pools` to see if any pools are at capacity.
+
+5. Review `list_connections` to ensure all expected connections are configured.
+
+6. Summarize the health status with:
+   - Number of healthy vs problematic DAGs
+   - Any blocking issues
+   - Recommended actions
+
+Start by running `get_system_health()` to assess the overall system state.
+"""
+
+
+@mcp.prompt()
+def onboard_new_dag(dag_id: str) -> str:
+    """Guide to understanding a new DAG.
+
+    Args:
+        dag_id: The DAG ID to learn about
+    """
+    return f"""You are helping someone understand the DAG '{dag_id}'. Provide a thorough overview:
+
+1. Use `explore_dag` to get comprehensive DAG information including:
+   - Schedule and timing
+   - Owner and tags
+   - All tasks and their relationships
+   - Source code
+
+2. Explain the DAG's purpose based on its description and task structure.
+
+3. Walk through the task dependencies - what runs first, what runs in parallel,
+   what are the critical path tasks.
+
+4. Identify any external dependencies:
+   - Check what connections the DAG might use with `list_connections`
+   - Check for any assets/datasets it produces or consumes with `list_assets`
+
+5. Show recent execution history with `list_dag_runs` filtered to this DAG.
+
+6. Highlight any potential issues:
+   - Is the DAG paused?
+   - Are there any warnings?
+   - What's the recent success/failure rate?
+
+Start by running `explore_dag("{dag_id}")` to get the full picture.
+"""
