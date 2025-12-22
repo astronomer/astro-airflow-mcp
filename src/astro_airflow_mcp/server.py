@@ -2,7 +2,7 @@
 
 from typing import Any
 
-import requests
+import httpx
 from fastmcp import FastMCP
 
 # Default configuration values
@@ -38,6 +38,8 @@ class AirflowConfig:
     def __init__(self):
         self.url: str = DEFAULT_AIRFLOW_URL
         self.auth_token: str | None = None
+        self.username: str | None = None
+        self.password: str | None = None
 
 
 _config = AirflowConfig()
@@ -46,17 +48,25 @@ _config = AirflowConfig()
 def configure(
     url: str | None = None,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> None:
     """Configure global Airflow connection settings.
 
     Args:
         url: Base URL of Airflow webserver
         auth_token: Bearer token for authentication
+        username: Username for basic authentication
+        password: Password for basic authentication
     """
     if url:
         _config.url = url
     if auth_token:
         _config.auth_token = auth_token
+    if username:
+        _config.username = username
+    if password:
+        _config.password = password
 
 
 # Helper functions for API calls and response formatting
@@ -65,14 +75,18 @@ def _call_airflow_api(
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     params: dict[str, Any] | None = None,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> dict[str, Any]:
-    """Call Airflow REST API with error handling and optional authentication.
+    """Call Airflow REST API with error handling and authentication.
 
     Args:
         endpoint: API endpoint path (e.g., 'dags', 'dagRuns')
         airflow_url: Base URL of the Airflow webserver
         params: Optional query parameters
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         Parsed JSON response from the API
@@ -81,22 +95,29 @@ def _call_airflow_api(
         Exception: If the API call fails with error details
 
     Note:
-        If auth_token is provided, Bearer token authentication is used.
-        If not provided, no authentication is used.
+        Auth priority: Bearer token > Basic auth > No auth
     """
     try:
         api_url = f"{airflow_url}/api/v2/{endpoint}"
         headers: dict[str, str] = {}
+        auth: tuple[str, str] | None = None
 
-        # Handle authentication
+        # Handle authentication (priority: bearer token > basic auth)
         if auth_token:
             headers["Authorization"] = f"Bearer {auth_token}"
+        elif username and password:
+            auth = (username, password)
 
-        response = requests.get(api_url, params=params, headers=headers, timeout=30)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
+        with httpx.Client(timeout=30.0) as client:
+            response = client.get(api_url, params=params, headers=headers, auth=auth)
+            response.raise_for_status()
+            return response.json()
+    except httpx.RequestError as e:
         raise Exception(f"Error connecting to Airflow API: {str(e)}") from e
+    except httpx.HTTPStatusError as e:
+        raise Exception(
+            f"HTTP error from Airflow API: {e.response.status_code} - {e.response.text}"
+        ) from e
     except Exception as e:
         raise Exception(f"Error calling API endpoint '{endpoint}': {str(e)}") from e
 
@@ -127,6 +148,8 @@ def _get_dag_details_impl(
     dag_id: str,
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for getting details about a specific DAG.
 
@@ -134,6 +157,8 @@ def _get_dag_details_impl(
         dag_id: The ID of the DAG to get details for
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the DAG details
@@ -143,6 +168,8 @@ def _get_dag_details_impl(
             f"dags/{dag_id}",
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         import json
@@ -152,7 +179,7 @@ def _get_dag_details_impl(
         return str(e)
 
 
-@mcp.tool()
+@mcp.tool(tags={"dags", "read_only"})
 def get_dag_details(dag_id: str) -> str:
     """Get detailed information about a specific Apache Airflow DAG.
 
@@ -191,6 +218,8 @@ def get_dag_details(dag_id: str) -> str:
         dag_id=dag_id,
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
@@ -199,6 +228,8 @@ def _list_dags_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing DAGs from Airflow.
 
@@ -207,6 +238,8 @@ def _list_dags_impl(
         limit: Maximum number of DAGs to return (default: 100)
         offset: Offset for pagination (default: 0)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of DAGs with their metadata
@@ -218,6 +251,8 @@ def _list_dags_impl(
             airflow_url,
             params,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "dags" in data:
@@ -228,7 +263,7 @@ def _list_dags_impl(
         return str(e)
 
 
-@mcp.tool()
+@mcp.tool(tags={"dags", "read_only"})
 def list_dags() -> str:
     """Get information about all Apache Airflow DAGs (Directed Acyclic Graphs).
 
@@ -255,6 +290,8 @@ def list_dags() -> str:
     return _list_dags_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
@@ -262,6 +299,8 @@ def _get_dag_source_impl(
     dag_id: str,
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for getting DAG source code from Airflow.
 
@@ -269,6 +308,8 @@ def _get_dag_source_impl(
         dag_id: The ID of the DAG to get source code for
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the DAG source code and metadata
@@ -279,6 +320,8 @@ def _get_dag_source_impl(
             f"dagSources/{dag_id}",
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         import json
@@ -288,7 +331,7 @@ def _get_dag_source_impl(
         return str(e)
 
 
-@mcp.tool()
+@mcp.tool(tags={"dags", "read_only"})
 def get_dag_source(dag_id: str) -> str:
     """Get the source code for a specific Apache Airflow DAG.
 
@@ -312,18 +355,24 @@ def get_dag_source(dag_id: str) -> str:
         dag_id=dag_id,
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
 def _get_dag_stats_impl(
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for getting DAG statistics from Airflow.
 
     Args:
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing DAG run statistics by state
@@ -334,6 +383,8 @@ def _get_dag_stats_impl(
             "dagStats",
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         import json
@@ -343,7 +394,7 @@ def _get_dag_stats_impl(
         return str(e)
 
 
-@mcp.tool()
+@mcp.tool(tags={"monitoring", "read_only"})
 def get_dag_stats() -> str:
     """Get statistics about DAG runs across all DAGs (success/failure counts by state).
 
@@ -366,6 +417,8 @@ def get_dag_stats() -> str:
     return _get_dag_stats_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
@@ -374,6 +427,8 @@ def _list_dag_warnings_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing DAG warnings from Airflow.
 
@@ -382,6 +437,8 @@ def _list_dag_warnings_impl(
         limit: Maximum number of warnings to return (default: 100)
         offset: Offset for pagination (default: 0)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of DAG warnings
@@ -393,6 +450,8 @@ def _list_dag_warnings_impl(
             airflow_url,
             params,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "dag_warnings" in data:
@@ -408,6 +467,8 @@ def _list_import_errors_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing import errors from Airflow.
 
@@ -416,6 +477,8 @@ def _list_import_errors_impl(
         limit: Maximum number of import errors to return (default: 100)
         offset: Offset for pagination (default: 0)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of import errors
@@ -427,6 +490,8 @@ def _list_import_errors_impl(
             airflow_url,
             params,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "import_errors" in data:
@@ -437,7 +502,7 @@ def _list_import_errors_impl(
         return str(e)
 
 
-@mcp.tool()
+@mcp.tool(tags={"monitoring", "read_only"})
 def list_dag_warnings() -> str:
     """Get warnings and issues detected in DAG definitions.
 
@@ -459,10 +524,12 @@ def list_dag_warnings() -> str:
     return _list_dag_warnings_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={"monitoring", "read_only"})
 def list_import_errors() -> str:
     """Get import errors from DAG files that failed to parse or load.
 
@@ -493,6 +560,8 @@ def list_import_errors() -> str:
     return _list_import_errors_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
@@ -501,6 +570,8 @@ def _get_task_impl(
     task_id: str,
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for getting task details from Airflow.
 
@@ -509,6 +580,8 @@ def _get_task_impl(
         task_id: The ID of the task
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the task details
@@ -519,6 +592,8 @@ def _get_task_impl(
             endpoint,
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         import json
@@ -532,6 +607,8 @@ def _list_tasks_impl(
     dag_id: str,
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing tasks in a DAG from Airflow.
 
@@ -539,6 +616,8 @@ def _list_tasks_impl(
         dag_id: The ID of the DAG to list tasks for
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of tasks with their metadata
@@ -549,6 +628,8 @@ def _list_tasks_impl(
             endpoint,
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "tasks" in data:
@@ -565,6 +646,8 @@ def _get_task_instance_impl(
     task_id: str,
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for getting task instance details from Airflow.
 
@@ -574,6 +657,8 @@ def _get_task_instance_impl(
         task_id: The ID of the task
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the task instance details
@@ -585,6 +670,8 @@ def _get_task_instance_impl(
             endpoint,
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         import json
@@ -594,7 +681,7 @@ def _get_task_instance_impl(
         return str(e)
 
 
-@mcp.tool()
+@mcp.tool(tags={"tasks", "read_only"})
 def get_task(dag_id: str, task_id: str) -> str:
     """Get detailed information about a specific task definition in a DAG.
 
@@ -634,10 +721,12 @@ def get_task(dag_id: str, task_id: str) -> str:
         task_id=task_id,
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={"tasks", "read_only"})
 def list_tasks(dag_id: str) -> str:
     """Get all tasks defined in a specific DAG.
 
@@ -670,10 +759,12 @@ def list_tasks(dag_id: str) -> str:
         dag_id=dag_id,
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={"tasks", "read_only"})
 def get_task_instance(dag_id: str, dag_run_id: str, task_id: str) -> str:
     """Get detailed information about a specific task instance execution.
 
@@ -709,6 +800,8 @@ def get_task_instance(dag_id: str, dag_run_id: str, task_id: str) -> str:
         task_id=task_id,
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
@@ -717,6 +810,8 @@ def _list_dag_runs_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing DAG runs from Airflow.
 
@@ -725,6 +820,8 @@ def _list_dag_runs_impl(
         limit: Maximum number of DAG runs to return (default: 100)
         offset: Offset for pagination (default: 0)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of DAG runs with their metadata
@@ -737,6 +834,8 @@ def _list_dag_runs_impl(
             airflow_url,
             params,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "dag_runs" in data:
@@ -747,7 +846,7 @@ def _list_dag_runs_impl(
         return str(e)
 
 
-@mcp.tool()
+@mcp.tool(tags={"runs", "read_only"})
 def list_dag_runs() -> str:
     """Get execution history and status of DAG runs (workflow executions).
 
@@ -775,6 +874,8 @@ def list_dag_runs() -> str:
     return _list_dag_runs_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
@@ -783,6 +884,8 @@ def _list_assets_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing assets from Airflow.
 
@@ -791,6 +894,8 @@ def _list_assets_impl(
         limit: Maximum number of assets to return (default: 100)
         offset: Offset for pagination (default: 0)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of assets with their metadata
@@ -802,6 +907,8 @@ def _list_assets_impl(
             airflow_url,
             params,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "assets" in data:
@@ -812,7 +919,7 @@ def _list_assets_impl(
         return str(e)
 
 
-@mcp.tool()
+@mcp.tool(tags={"assets", "read_only"})
 def list_assets() -> str:
     """Get data assets and datasets tracked by Airflow (data lineage).
 
@@ -840,6 +947,8 @@ def list_assets() -> str:
     return _list_assets_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
@@ -848,6 +957,8 @@ def _list_connections_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing connections from Airflow.
 
@@ -859,6 +970,8 @@ def _list_connections_impl(
         limit: Maximum number of connections to return (default: 100)
         offset: Offset for pagination (default: 0)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of connections with their metadata
@@ -872,6 +985,8 @@ def _list_connections_impl(
             airflow_url,
             params,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "connections" in data:
@@ -908,7 +1023,7 @@ def _list_connections_impl(
         return str(e)
 
 
-@mcp.tool()
+@mcp.tool(tags={"configuration", "read_only"})
 def list_connections() -> str:
     """Get connection configurations for external systems (databases, APIs, services).
 
@@ -940,6 +1055,8 @@ def list_connections() -> str:
     return _list_connections_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
@@ -947,6 +1064,8 @@ def _get_variable_impl(
     variable_key: str,
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for getting a specific variable from Airflow.
 
@@ -954,6 +1073,8 @@ def _get_variable_impl(
         variable_key: The key of the variable to get
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the variable details
@@ -963,6 +1084,8 @@ def _get_variable_impl(
             f"variables/{variable_key}",
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         import json
@@ -977,6 +1100,8 @@ def _list_variables_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing variables from Airflow.
 
@@ -985,6 +1110,8 @@ def _list_variables_impl(
         limit: Maximum number of variables to return (default: 100)
         offset: Offset for pagination (default: 0)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of variables with their metadata
@@ -996,6 +1123,8 @@ def _list_variables_impl(
             airflow_url,
             params,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "variables" in data:
@@ -1009,12 +1138,16 @@ def _list_variables_impl(
 def _get_version_impl(
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for getting Airflow version information.
 
     Args:
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the Airflow version information
@@ -1024,6 +1157,8 @@ def _get_version_impl(
             "version",
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         import json
@@ -1036,12 +1171,16 @@ def _get_version_impl(
 def _get_config_impl(
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for getting Airflow configuration.
 
     Args:
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the Airflow configuration organized by sections
@@ -1053,6 +1192,8 @@ def _get_config_impl(
             "config",
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "sections" in data:
@@ -1069,6 +1210,8 @@ def _get_pool_impl(
     pool_name: str,
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for getting details about a specific pool.
 
@@ -1076,6 +1219,8 @@ def _get_pool_impl(
         pool_name: The name of the pool to get details for
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the pool details
@@ -1085,6 +1230,8 @@ def _get_pool_impl(
             f"pools/{pool_name}",
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         import json
@@ -1099,6 +1246,8 @@ def _list_pools_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing pools from Airflow.
 
@@ -1107,6 +1256,8 @@ def _list_pools_impl(
         limit: Maximum number of pools to return (default: 100)
         offset: Offset for pagination (default: 0)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of pools with their metadata
@@ -1118,6 +1269,8 @@ def _list_pools_impl(
             airflow_url,
             params,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "pools" in data:
@@ -1133,6 +1286,8 @@ def _list_plugins_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing installed plugins from Airflow.
 
@@ -1141,6 +1296,8 @@ def _list_plugins_impl(
         limit: Maximum number of plugins to return (default: 100)
         offset: Offset for pagination (default: 0)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of installed plugins
@@ -1152,6 +1309,8 @@ def _list_plugins_impl(
             airflow_url,
             params,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "plugins" in data:
@@ -1165,12 +1324,16 @@ def _list_plugins_impl(
 def _list_providers_impl(
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> str:
     """Internal implementation for listing installed providers from Airflow.
 
     Args:
         airflow_url: The base URL of the Airflow webserver (default: http://localhost:8080)
         auth_token: Optional Bearer token for token-based authentication
+        username: Optional username for basic authentication
+        password: Optional password for basic authentication
 
     Returns:
         JSON string containing the list of installed providers
@@ -1180,6 +1343,8 @@ def _list_providers_impl(
             "providers",
             airflow_url,
             auth_token=auth_token,
+            username=username,
+            password=password,
         )
 
         if "providers" in data:
@@ -1190,7 +1355,7 @@ def _list_providers_impl(
         return str(e)
 
 
-@mcp.tool()
+@mcp.tool(tags={"resources", "read_only"})
 def get_pool(pool_name: str) -> str:
     """Get detailed information about a specific resource pool.
 
@@ -1222,10 +1387,12 @@ def get_pool(pool_name: str) -> str:
         pool_name=pool_name,
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={"resources", "read_only"})
 def list_pools() -> str:
     """Get resource pools for managing task concurrency and resource allocation.
 
@@ -1255,10 +1422,12 @@ def list_pools() -> str:
     return _list_pools_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={"system", "read_only"})
 def list_plugins() -> str:
     """Get information about installed Airflow plugins.
 
@@ -1287,10 +1456,12 @@ def list_plugins() -> str:
     return _list_plugins_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={"system", "read_only"})
 def list_providers() -> str:
     """Get information about installed Airflow provider packages.
 
@@ -1312,10 +1483,12 @@ def list_providers() -> str:
     return _list_providers_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={"configuration", "read_only"})
 def get_variable(variable_key: str) -> str:
     """Get a specific Airflow variable by key.
 
@@ -1343,10 +1516,12 @@ def get_variable(variable_key: str) -> str:
         variable_key=variable_key,
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={"configuration", "read_only"})
 def list_variables() -> str:
     """Get all Airflow variables (key-value configuration pairs).
 
@@ -1375,10 +1550,12 @@ def list_variables() -> str:
     return _list_variables_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={"system", "read_only"})
 def get_airflow_version() -> str:
     """Get version information for the Airflow instance.
 
@@ -1404,10 +1581,12 @@ def get_airflow_version() -> str:
     return _get_version_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={"system", "read_only"})
 def get_airflow_config() -> str:
     """Get Airflow instance configuration and settings.
 
@@ -1439,4 +1618,417 @@ def get_airflow_config() -> str:
     return _get_config_impl(
         airflow_url=_config.url,
         auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
     )
+
+
+# =============================================================================
+# CONSOLIDATED TOOLS (Agent-first, task-oriented)
+# =============================================================================
+
+
+@mcp.tool(tags={"investigation", "consolidated"})
+def explore_dag(dag_id: str) -> str:
+    """Comprehensive investigation of a DAG - get all relevant info in one call.
+
+    USE THIS TOOL WHEN you need to understand a DAG completely. Instead of making
+    multiple calls, this returns everything about a DAG in a single response.
+
+    This is the preferred first tool when:
+    - User asks "Tell me about DAG X" or "What is this DAG?"
+    - You need to understand a DAG's structure before diagnosing issues
+    - You want to know the schedule, tasks, and source code together
+
+    Returns combined data:
+    - DAG metadata (schedule, owners, tags, paused status)
+    - All tasks with their operators and dependencies
+    - DAG source code
+    - Any import errors or warnings for this DAG
+
+    Args:
+        dag_id: The ID of the DAG to explore
+
+    Returns:
+        JSON with comprehensive DAG information
+    """
+    import json
+
+    result: dict[str, Any] = {"dag_id": dag_id}
+
+    # Get DAG details
+    try:
+        dag_data = _call_airflow_api(
+            f"dags/{dag_id}",
+            _config.url,
+            auth_token=_config.auth_token,
+            username=_config.username,
+            password=_config.password,
+        )
+        result["dag_info"] = dag_data
+    except Exception as e:
+        result["dag_info"] = {"error": str(e)}
+
+    # Get tasks
+    try:
+        tasks_data = _call_airflow_api(
+            f"dags/{dag_id}/tasks",
+            _config.url,
+            auth_token=_config.auth_token,
+            username=_config.username,
+            password=_config.password,
+        )
+        result["tasks"] = tasks_data.get("tasks", [])
+    except Exception as e:
+        result["tasks"] = {"error": str(e)}
+
+    # Get DAG source
+    try:
+        source_data = _call_airflow_api(
+            f"dagSources/{dag_id}",
+            _config.url,
+            auth_token=_config.auth_token,
+            username=_config.username,
+            password=_config.password,
+        )
+        result["source"] = source_data
+    except Exception as e:
+        result["source"] = {"error": str(e)}
+
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool(tags={"troubleshooting", "consolidated"})
+def diagnose_dag_run(dag_id: str, dag_run_id: str) -> str:
+    """Diagnose issues with a specific DAG run - get run details and failed tasks.
+
+    USE THIS TOOL WHEN troubleshooting a failed or problematic DAG run. Returns
+    all the information you need to understand what went wrong.
+
+    This is the preferred tool when:
+    - User asks "Why did this DAG run fail?"
+    - User asks "What's wrong with run X?"
+    - You need to investigate task failures in a specific run
+
+    Returns combined data:
+    - DAG run metadata (state, start/end times, trigger type)
+    - All task instances for this run with their states
+    - Highlighted failed/upstream_failed tasks with details
+    - Summary of task states
+
+    Args:
+        dag_id: The ID of the DAG
+        dag_run_id: The ID of the DAG run (e.g., "manual__2024-01-01T00:00:00+00:00")
+
+    Returns:
+        JSON with diagnostic information about the DAG run
+    """
+    import json
+
+    result: dict[str, Any] = {"dag_id": dag_id, "dag_run_id": dag_run_id}
+
+    # Get DAG run details
+    try:
+        run_data = _call_airflow_api(
+            f"dags/{dag_id}/dagRuns/{dag_run_id}",
+            _config.url,
+            auth_token=_config.auth_token,
+            username=_config.username,
+            password=_config.password,
+        )
+        result["run_info"] = run_data
+    except Exception as e:
+        result["run_info"] = {"error": str(e)}
+        return json.dumps(result, indent=2)
+
+    # Get task instances for this run
+    try:
+        tasks_data = _call_airflow_api(
+            f"dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances",
+            _config.url,
+            auth_token=_config.auth_token,
+            username=_config.username,
+            password=_config.password,
+        )
+        task_instances = tasks_data.get("task_instances", [])
+        result["task_instances"] = task_instances
+
+        # Summarize task states
+        state_counts: dict[str, int] = {}
+        failed_tasks = []
+        for ti in task_instances:
+            state = ti.get("state", "unknown")
+            state_counts[state] = state_counts.get(state, 0) + 1
+            if state in ("failed", "upstream_failed"):
+                failed_tasks.append(
+                    {
+                        "task_id": ti.get("task_id"),
+                        "state": state,
+                        "start_date": ti.get("start_date"),
+                        "end_date": ti.get("end_date"),
+                        "try_number": ti.get("try_number"),
+                    }
+                )
+
+        result["summary"] = {
+            "total_tasks": len(task_instances),
+            "state_counts": state_counts,
+            "failed_tasks": failed_tasks,
+        }
+    except Exception as e:
+        result["task_instances"] = {"error": str(e)}
+
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool(tags={"monitoring", "consolidated"})
+def get_system_health() -> str:
+    """Get overall Airflow system health - import errors, warnings, and DAG stats.
+
+    USE THIS TOOL WHEN you need a quick health check of the Airflow system.
+    Returns a consolidated view of potential issues across the entire system.
+
+    This is the preferred tool when:
+    - User asks "Are there any problems with Airflow?"
+    - User asks "Show me the system health" or "Any errors?"
+    - You want to do a morning health check
+    - You're starting an investigation and want to see the big picture
+
+    Returns combined data:
+    - Import errors (DAG files that failed to parse)
+    - DAG warnings (deprecations, configuration issues)
+    - DAG statistics (run counts by state) if available
+    - Version information
+
+    Returns:
+        JSON with system health overview
+    """
+    import json
+
+    result: dict[str, Any] = {}
+
+    # Get version info
+    try:
+        version_data = _call_airflow_api(
+            "version",
+            _config.url,
+            auth_token=_config.auth_token,
+            username=_config.username,
+            password=_config.password,
+        )
+        result["version"] = version_data
+    except Exception as e:
+        result["version"] = {"error": str(e)}
+
+    # Get import errors
+    try:
+        errors_data = _call_airflow_api(
+            "importErrors",
+            _config.url,
+            params={"limit": 100},
+            auth_token=_config.auth_token,
+            username=_config.username,
+            password=_config.password,
+        )
+        import_errors = errors_data.get("import_errors", [])
+        result["import_errors"] = {
+            "count": len(import_errors),
+            "errors": import_errors,
+        }
+    except Exception as e:
+        result["import_errors"] = {"error": str(e)}
+
+    # Get DAG warnings
+    try:
+        warnings_data = _call_airflow_api(
+            "dagWarnings",
+            _config.url,
+            params={"limit": 100},
+            auth_token=_config.auth_token,
+            username=_config.username,
+            password=_config.password,
+        )
+        dag_warnings = warnings_data.get("dag_warnings", [])
+        result["dag_warnings"] = {
+            "count": len(dag_warnings),
+            "warnings": dag_warnings,
+        }
+    except Exception as e:
+        result["dag_warnings"] = {"error": str(e)}
+
+    # Get DAG stats (Airflow 3.x only)
+    try:
+        stats_data = _call_airflow_api(
+            "dagStats",
+            _config.url,
+            auth_token=_config.auth_token,
+            username=_config.username,
+            password=_config.password,
+        )
+        result["dag_stats"] = stats_data
+    except Exception:
+        result["dag_stats"] = {"available": False, "note": "dagStats endpoint not available"}
+
+    # Calculate overall health status
+    import_error_count = result.get("import_errors", {}).get("count", 0)
+    warning_count = result.get("dag_warnings", {}).get("count", 0)
+
+    if import_error_count > 0:
+        result["overall_status"] = "unhealthy"
+        result["status_reason"] = f"{import_error_count} import error(s) detected"
+    elif warning_count > 0:
+        result["overall_status"] = "warning"
+        result["status_reason"] = f"{warning_count} DAG warning(s) detected"
+    else:
+        result["overall_status"] = "healthy"
+        result["status_reason"] = "No import errors or warnings"
+
+    return json.dumps(result, indent=2)
+
+
+# =============================================================================
+# MCP RESOURCES (Static, read-only information)
+# =============================================================================
+
+
+@mcp.resource("airflow://version")
+def resource_version() -> str:
+    """Get Airflow version information as a resource."""
+    return _get_version_impl(
+        airflow_url=_config.url,
+        auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
+    )
+
+
+@mcp.resource("airflow://providers")
+def resource_providers() -> str:
+    """Get installed Airflow providers as a resource."""
+    return _list_providers_impl(
+        airflow_url=_config.url,
+        auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
+    )
+
+
+@mcp.resource("airflow://plugins")
+def resource_plugins() -> str:
+    """Get installed Airflow plugins as a resource."""
+    return _list_plugins_impl(
+        airflow_url=_config.url,
+        auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
+    )
+
+
+@mcp.resource("airflow://config")
+def resource_config() -> str:
+    """Get Airflow configuration as a resource."""
+    return _get_config_impl(
+        airflow_url=_config.url,
+        auth_token=_config.auth_token,
+        username=_config.username,
+        password=_config.password,
+    )
+
+
+# =============================================================================
+# MCP PROMPTS (Guided workflows)
+# =============================================================================
+
+
+@mcp.prompt()
+def troubleshoot_failed_dag(dag_id: str) -> str:
+    """Step-by-step guide to troubleshoot a failed DAG.
+
+    Args:
+        dag_id: The DAG ID to troubleshoot
+    """
+    return f"""You are helping troubleshoot failures for DAG '{dag_id}'. Follow these steps:
+
+1. First, use `explore_dag` to understand the DAG structure and check for any import errors.
+
+2. Use `list_dag_runs` (filter by dag_id if possible) to find recent failed runs.
+
+3. For each failed run, use `diagnose_dag_run` to get detailed information about:
+   - Which tasks failed
+   - The state of upstream tasks
+   - Start/end times to understand duration
+
+4. Based on the failed tasks, investigate:
+   - Check task logs if available
+   - Look at task dependencies (upstream_task_ids)
+   - Check if any pools are at capacity using `list_pools`
+
+5. Check system-wide issues using `get_system_health` to see if there are
+   import errors or warnings that might be related.
+
+6. Summarize your findings and provide recommendations for fixing the issues.
+
+Start by running `explore_dag("{dag_id}")` to understand the DAG.
+"""
+
+
+@mcp.prompt()
+def daily_health_check() -> str:
+    """Morning health check workflow for Airflow."""
+    return """You are performing a daily health check on the Airflow system. Follow these steps:
+
+1. Start with `get_system_health` to get an overview of:
+   - Import errors (broken DAG files)
+   - DAG warnings
+   - Overall system status
+
+2. If there are import errors, prioritize investigating those first as they prevent DAGs from running.
+
+3. Use `list_dag_runs` to see recent DAG run activity and identify any failures.
+
+4. Check resource utilization with `list_pools` to see if any pools are at capacity.
+
+5. Review `list_connections` to ensure all expected connections are configured.
+
+6. Summarize the health status with:
+   - Number of healthy vs problematic DAGs
+   - Any blocking issues
+   - Recommended actions
+
+Start by running `get_system_health()` to assess the overall system state.
+"""
+
+
+@mcp.prompt()
+def onboard_new_dag(dag_id: str) -> str:
+    """Guide to understanding a new DAG.
+
+    Args:
+        dag_id: The DAG ID to learn about
+    """
+    return f"""You are helping someone understand the DAG '{dag_id}'. Provide a thorough overview:
+
+1. Use `explore_dag` to get comprehensive DAG information including:
+   - Schedule and timing
+   - Owner and tags
+   - All tasks and their relationships
+   - Source code
+
+2. Explain the DAG's purpose based on its description and task structure.
+
+3. Walk through the task dependencies - what runs first, what runs in parallel,
+   what are the critical path tasks.
+
+4. Identify any external dependencies:
+   - Check what connections the DAG might use with `list_connections`
+   - Check for any assets/datasets it produces or consumes with `list_assets`
+
+5. Show recent execution history with `list_dag_runs` filtered to this DAG.
+
+6. Highlight any potential issues:
+   - Is the DAG paused?
+   - Are there any warnings?
+   - What's the recent success/failure rate?
+
+Start by running `explore_dag("{dag_id}")` to get the full picture.
+"""

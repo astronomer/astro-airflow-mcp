@@ -48,6 +48,18 @@ def main():
         default=os.getenv("AIRFLOW_AUTH_TOKEN"),
         help="Bearer token for Airflow API authentication",
     )
+    parser.add_argument(
+        "--username",
+        type=str,
+        default=os.getenv("AIRFLOW_USERNAME"),
+        help="Username for basic authentication",
+    )
+    parser.add_argument(
+        "--password",
+        type=str,
+        default=os.getenv("AIRFLOW_PASSWORD"),
+        help="Password for basic authentication",
+    )
 
     args = parser.parse_args()
 
@@ -55,12 +67,16 @@ def main():
     configure(
         url=args.airflow_url,
         auth_token=args.auth_token,
+        username=args.username,
+        password=args.password,
     )
 
     # Log Airflow connection configuration
     logger.info(f"Airflow URL: {args.airflow_url}")
     if args.auth_token:
         logger.info("Authentication: Bearer token")
+    elif args.username and args.password:
+        logger.info(f"Authentication: Basic auth (user: {args.username})")
     else:
         logger.info("Authentication: None")
 
