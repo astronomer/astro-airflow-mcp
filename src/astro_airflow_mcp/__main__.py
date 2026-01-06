@@ -43,7 +43,19 @@ def main():
         "--auth-token",
         type=str,
         default=os.getenv("AIRFLOW_AUTH_TOKEN"),
-        help="Bearer token for Airflow API authentication",
+        help="Bearer token for Airflow API authentication (takes precedence over username/password)",
+    )
+    parser.add_argument(
+        "--username",
+        type=str,
+        default=os.getenv("AIRFLOW_USERNAME", "admin"),
+        help="Username for Airflow API token authentication (Airflow 3.x, default: admin)",
+    )
+    parser.add_argument(
+        "--password",
+        type=str,
+        default=os.getenv("AIRFLOW_PASSWORD", "admin"),
+        help="Password for Airflow API token authentication (Airflow 3.x, default: admin)",
     )
 
     args = parser.parse_args()
@@ -56,14 +68,18 @@ def main():
     configure(
         url=args.airflow_url,
         auth_token=args.auth_token,
+        username=args.username,
+        password=args.password,
     )
 
     # Log Airflow connection configuration
     logger.info(f"Airflow URL: {args.airflow_url}")
     if args.auth_token:
-        logger.info("Authentication: Bearer token")
+        logger.info("Authentication: Direct bearer token")
+    elif args.username:
+        logger.info(f"Authentication: Token manager (username: {args.username})")
     else:
-        logger.info("Authentication: None")
+        logger.info("Authentication: Token manager (credential-less mode)")
 
     # Run the server with specified transport
     if args.transport == "http":
