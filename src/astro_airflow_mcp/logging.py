@@ -23,17 +23,21 @@ def get_logger(name: str | None = None) -> logging.Logger:
     return logging.getLogger("airflow_mcp")
 
 
-def configure_logging(level: str | int = logging.INFO) -> None:
+def configure_logging(level: str | int = logging.INFO, stdio_mode: bool = False) -> None:
     """Configure logging for the airflow_mcp package.
 
-    Sets up a simple console handler with a standard format.
+    Sets up a console handler with a standard format. When running in stdio mode,
+    logs are sent to stderr to avoid corrupting JSON-RPC messages on stdout.
 
     Args:
         level: Logging level (e.g., logging.INFO, logging.DEBUG, or "INFO", "DEBUG")
               Defaults to INFO.
+        stdio_mode: If True, logs to stderr instead of stdout to avoid corrupting
+                   JSON-RPC protocol messages. Defaults to False.
 
     Example:
         >>> configure_logging(level=logging.DEBUG)
+        >>> configure_logging(level=logging.INFO, stdio_mode=True)  # For MCP stdio transport
     """
     # Convert string level to int if needed
     if isinstance(level, str):
@@ -46,8 +50,9 @@ def configure_logging(level: str | int = logging.INFO) -> None:
     # Remove any existing handlers to avoid duplicates
     logger.handlers.clear()
 
-    # Create console handler
-    handler = logging.StreamHandler(sys.stdout)
+    # Create console handler - use stderr in stdio mode to avoid corrupting JSON-RPC
+    stream = sys.stderr if stdio_mode else sys.stdout
+    handler = logging.StreamHandler(stream)
     handler.setLevel(level)
 
     # Create simple formatter
