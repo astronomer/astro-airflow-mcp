@@ -12,10 +12,7 @@ logger = get_logger("main")
 
 def main():
     """Main entry point for the Airflow MCP server."""
-    # Configure logging
-    configure_logging(level=logging.INFO)
-
-    # Parse command line arguments
+    # Parse command line arguments first to determine transport mode
     parser = argparse.ArgumentParser(description="Airflow MCP Server")
     parser.add_argument(
         "--transport",
@@ -50,6 +47,10 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Configure logging - use stderr in stdio mode to avoid corrupting JSON-RPC
+    stdio_mode = args.transport == "stdio"
+    configure_logging(level=logging.INFO, stdio_mode=stdio_mode)
 
     # Configure Airflow connection settings
     configure(
