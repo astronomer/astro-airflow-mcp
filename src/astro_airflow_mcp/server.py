@@ -1,5 +1,6 @@
 """FastMCP server for Airflow integration."""
 
+import json
 from typing import Any
 
 import requests
@@ -149,7 +150,6 @@ def _wrap_list_response(items: list[dict[str, Any]], key_name: str, data: dict[s
     Returns:
         JSON string with pagination metadata
     """
-    import json
 
     total_entries = data.get("total_entries", len(items))
     result: dict[str, Any] = {
@@ -181,8 +181,6 @@ def _get_dag_details_impl(
             airflow_url,
             auth_token=auth_token,
         )
-
-        import json
 
         return json.dumps(data, indent=2)
     except Exception as e:
@@ -318,8 +316,6 @@ def _get_dag_source_impl(
             auth_token=auth_token,
         )
 
-        import json
-
         return json.dumps(source_data, indent=2)
     except Exception as e:
         return str(e)
@@ -372,8 +368,6 @@ def _get_dag_stats_impl(
             airflow_url,
             auth_token=auth_token,
         )
-
-        import json
 
         return json.dumps(stats_data, indent=2)
     except Exception as e:
@@ -558,8 +552,6 @@ def _get_task_impl(
             auth_token=auth_token,
         )
 
-        import json
-
         return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
@@ -623,8 +615,6 @@ def _get_task_instance_impl(
             airflow_url,
             auth_token=auth_token,
         )
-
-        import json
 
         return json.dumps(data, indent=2)
     except Exception as e:
@@ -839,8 +829,6 @@ def _get_dag_run_impl(
             auth_token=auth_token,
         )
 
-        import json
-
         return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
@@ -917,8 +905,6 @@ def _trigger_dag_impl(
             json_data=json_body,
             auth_token=auth_token,
         )
-
-        import json
 
         return json.dumps(data, indent=2)
     except Exception as e:
@@ -1054,7 +1040,6 @@ def _list_connections_impl(
     Returns:
         JSON string containing the list of connections with their metadata
     """
-    import json
 
     try:
         params = {"limit": limit, "offset": offset}
@@ -1156,8 +1141,6 @@ def _get_variable_impl(
             auth_token=auth_token,
         )
 
-        import json
-
         return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
@@ -1217,8 +1200,6 @@ def _get_version_impl(
             auth_token=auth_token,
         )
 
-        import json
-
         return json.dumps(data, indent=2)
     except Exception as e:
         return str(e)
@@ -1237,7 +1218,6 @@ def _get_config_impl(
     Returns:
         JSON string containing the Airflow configuration organized by sections
     """
-    import json
 
     try:
         data = _call_airflow_api(
@@ -1277,8 +1257,6 @@ def _get_pool_impl(
             airflow_url,
             auth_token=auth_token,
         )
-
-        import json
 
         return json.dumps(data, indent=2)
     except Exception as e:
