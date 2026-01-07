@@ -1,15 +1,125 @@
 """FastMCP server for Airflow integration."""
 
 import json
+import time
 from typing import Any
 
 import requests
 from fastmcp import FastMCP
 
+from astro_airflow_mcp.logging import get_logger
+
+logger = get_logger(__name__)
+
 # Default configuration values
 DEFAULT_AIRFLOW_URL = "http://localhost:8080"
 DEFAULT_LIMIT = 100
 DEFAULT_OFFSET = 0
+# Buffer time before token expiry to trigger refresh (5 minutes)
+TOKEN_REFRESH_BUFFER_SECONDS = 300
+
+
+class AirflowTokenManager:
+    """Manages JWT token lifecycle for Airflow API authentication.
+
+    Handles fetching tokens from /auth/token endpoint, automatic refresh
+    when tokens expire, and supports both credential-based and credential-less
+    (all_admins mode) authentication.
+    """
+
+    def __init__(
+        self,
+        airflow_url: str,
+        username: str | None = None,
+        password: str | None = None,
+    ):
+        """Initialize the token manager.
+
+        Args:
+            airflow_url: Base URL of the Airflow webserver
+            username: Optional username for token authentication
+            password: Optional password for token authentication
+        """
+        self.airflow_url = airflow_url
+        self.username = username
+        self.password = password
+        self._token: str | None = None
+        self._token_fetched_at: float | None = None
+        # Default token lifetime of 30 minutes if not provided by server
+        self._token_lifetime_seconds: float = 1800
+
+    def get_token(self) -> str | None:
+        """Get current token, fetching/refreshing if needed.
+
+        Returns:
+            JWT token string, or None if token fetch fails
+        """
+        if self._should_refresh():
+            self._fetch_token()
+        return self._token
+
+    def _should_refresh(self) -> bool:
+        """Check if token needs refresh (expired or not yet fetched).
+
+        Returns:
+            True if token should be refreshed
+        """
+        if self._token is None:
+            return True
+        if self._token_fetched_at is None:
+            return True
+        # Refresh if we're within the buffer time of expiry
+        elapsed = time.time() - self._token_fetched_at
+        return elapsed >= (self._token_lifetime_seconds - TOKEN_REFRESH_BUFFER_SECONDS)
+
+    def _fetch_token(self) -> None:
+        """Fetch new token from /auth/token endpoint.
+
+        Tries credential-less GET first if no username/password provided,
+        otherwise uses POST with credentials.
+        """
+        token_url = f"{self.airflow_url}/auth/token"
+
+        try:
+            if self.username and self.password:
+                # Use credentials to fetch token
+                logger.debug("Fetching token with username/password credentials")
+                response = requests.post(
+                    token_url,
+                    json={"username": self.username, "password": self.password},
+                    headers={"Content-Type": "application/json"},
+                    timeout=30,
+                )
+            else:
+                # Try credential-less fetch (for all_admins mode)
+                logger.debug("Attempting credential-less token fetch")
+                response = requests.get(token_url, timeout=30)
+
+            response.raise_for_status()
+            data = response.json()
+
+            # Extract token from response
+            # Airflow returns {"access_token": "...", "token_type": "bearer"}
+            if "access_token" in data:
+                self._token = data["access_token"]
+                self._token_fetched_at = time.time()
+                # Use expires_in if provided, otherwise keep default
+                if "expires_in" in data:
+                    self._token_lifetime_seconds = float(data["expires_in"])
+                logger.info("Successfully fetched Airflow API token")
+            else:
+                logger.warning(f"Unexpected token response format: {data}")
+                self._token = None
+
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Failed to fetch token from {token_url}: {e}")
+            self._token = None
+
+    def invalidate(self) -> None:
+        """Force token refresh on next request."""
+        self._token = None
+        self._token_fetched_at = None
+
 
 # Create MCP server
 mcp = FastMCP(
@@ -39,6 +149,7 @@ class AirflowConfig:
     def __init__(self):
         self.url: str = DEFAULT_AIRFLOW_URL
         self.auth_token: str | None = None
+        self.token_manager: AirflowTokenManager | None = None
 
 
 _config = AirflowConfig()
@@ -47,17 +158,66 @@ _config = AirflowConfig()
 def configure(
     url: str | None = None,
     auth_token: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> None:
     """Configure global Airflow connection settings.
 
     Args:
         url: Base URL of Airflow webserver
-        auth_token: Bearer token for authentication
+        auth_token: Direct bearer token for authentication (takes precedence)
+        username: Username for token-based authentication
+        password: Password for token-based authentication
+
+    Note:
+        If auth_token is provided, it will be used directly.
+        If username/password are provided (without auth_token), a token manager
+        will be created to fetch and refresh tokens automatically.
+        If neither is provided, credential-less token fetch will be attempted.
     """
     if url:
         _config.url = url
     if auth_token:
+        # Direct token takes precedence - no token manager needed
         _config.auth_token = auth_token
+        _config.token_manager = None
+    elif username or password:
+        # Use token manager with credentials
+        _config.auth_token = None
+        _config.token_manager = AirflowTokenManager(
+            airflow_url=_config.url,
+            username=username,
+            password=password,
+        )
+    else:
+        # No auth provided - try credential-less token manager
+        _config.auth_token = None
+        _config.token_manager = AirflowTokenManager(
+            airflow_url=_config.url,
+            username=None,
+            password=None,
+        )
+
+
+def _get_auth_token() -> str | None:
+    """Get the current authentication token.
+
+    Returns:
+        Bearer token string, or None if no authentication configured
+    """
+    # Direct token takes precedence
+    if _config.auth_token:
+        return _config.auth_token
+    # Otherwise use token manager
+    if _config.token_manager:
+        return _config.token_manager.get_token()
+    return None
+
+
+def _invalidate_token() -> None:
+    """Invalidate the current token to force refresh on next request."""
+    if _config.token_manager:
+        _config.token_manager.invalidate()
 
 
 # Helper functions for API calls and response formatting
@@ -66,6 +226,7 @@ def _call_airflow_api(
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     params: dict[str, Any] | None = None,
     auth_token: str | None = None,
+    _retry: bool = True,
 ) -> dict[str, Any]:
     """Call Airflow REST API with error handling and optional authentication.
 
@@ -74,6 +235,7 @@ def _call_airflow_api(
         airflow_url: Base URL of the Airflow webserver
         params: Optional query parameters
         auth_token: Optional Bearer token for token-based authentication
+        _retry: Internal flag to control retry on auth failure (default True)
 
     Returns:
         Parsed JSON response from the API
@@ -83,17 +245,26 @@ def _call_airflow_api(
 
     Note:
         If auth_token is provided, Bearer token authentication is used.
-        If not provided, no authentication is used.
+        If not provided, the global token (from token manager or config) is used.
+        On 401/403 errors, the token is invalidated and the request is retried once.
     """
     try:
         api_url = f"{airflow_url}/api/v2/{endpoint}"
         headers: dict[str, str] = {}
 
-        # Handle authentication
-        if auth_token:
-            headers["Authorization"] = f"Bearer {auth_token}"
+        # Handle authentication - use provided token or get from global config
+        token = auth_token if auth_token else _get_auth_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
 
         response = requests.get(api_url, params=params, headers=headers, timeout=30)
+
+        # Handle auth errors with retry
+        if response.status_code in (401, 403) and _retry and not auth_token:
+            logger.debug(f"Auth error ({response.status_code}), invalidating token and retrying")
+            _invalidate_token()
+            return _call_airflow_api(endpoint, airflow_url, params, auth_token=None, _retry=False)
+
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -107,6 +278,7 @@ def _post_airflow_api(
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     json_data: dict[str, Any] | None = None,
     auth_token: str | None = None,
+    _retry: bool = True,
 ) -> dict[str, Any]:
     """Call Airflow REST API with POST method.
 
@@ -115,22 +287,38 @@ def _post_airflow_api(
         airflow_url: Base URL of the Airflow webserver
         json_data: Optional JSON body to send with the request
         auth_token: Optional Bearer token for token-based authentication
+        _retry: Internal flag to control retry on auth failure (default True)
 
     Returns:
         Parsed JSON response from the API
 
     Raises:
         Exception: If the API call fails with error details
+
+    Note:
+        If auth_token is provided, Bearer token authentication is used.
+        If not provided, the global token (from token manager or config) is used.
+        On 401/403 errors, the token is invalidated and the request is retried once.
     """
     try:
         api_url = f"{airflow_url}/api/v2/{endpoint}"
         headers: dict[str, str] = {"Content-Type": "application/json"}
 
-        # Handle authentication
-        if auth_token:
-            headers["Authorization"] = f"Bearer {auth_token}"
+        # Handle authentication - use provided token or get from global config
+        token = auth_token if auth_token else _get_auth_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
 
         response = requests.post(api_url, json=json_data, headers=headers, timeout=30)
+
+        # Handle auth errors with retry
+        if response.status_code in (401, 403) and _retry and not auth_token:
+            logger.debug(f"Auth error ({response.status_code}), invalidating token and retrying")
+            _invalidate_token()
+            return _post_airflow_api(
+                endpoint, airflow_url, json_data, auth_token=None, _retry=False
+            )
+
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
