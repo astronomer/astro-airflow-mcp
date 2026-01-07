@@ -11,12 +11,25 @@ from astro_airflow_mcp.server import (
     TOKEN_REFRESH_BUFFER_SECONDS,
     AirflowTokenManager,
     _call_airflow_api,
+    _config,
     _get_auth_token,
     _get_dag_details_impl,
     _list_dags_impl,
     _post_airflow_api,
     configure,
 )
+
+
+@pytest.fixture
+def reset_config():
+    """Fixture that saves and restores global config after each test."""
+    original_url = _config.url
+    original_token = _config.auth_token
+    original_manager = _config.token_manager
+    yield
+    _config.url = original_url
+    _config.auth_token = original_token
+    _config.token_manager = original_manager
 
 
 class TestCallAirflowAPI:
@@ -173,89 +186,44 @@ class TestImplFunctions:
 class TestConfiguration:
     """Tests for global configuration."""
 
-    def test_configure_url(self):
+    def test_configure_url(self, reset_config):
         """Test configure() updates global URL."""
-        from astro_airflow_mcp.server import _config
+        configure(url="https://test.airflow.com")
+        assert _config.url == "https://test.airflow.com"
 
-        original_url = _config.url
-        try:
-            configure(url="https://test.airflow.com")
-            assert _config.url == "https://test.airflow.com"
-        finally:
-            # Restore original
-            _config.url = original_url
-
-    def test_configure_auth_token(self):
+    def test_configure_auth_token(self, reset_config):
         """Test configure() updates global auth token."""
-        from astro_airflow_mcp.server import _config
+        configure(auth_token="new_token_456")
+        assert _config.auth_token == "new_token_456"
 
-        original_token = _config.auth_token
-        try:
-            configure(auth_token="new_token_456")
-            assert _config.auth_token == "new_token_456"
-        finally:
-            # Restore original
-            _config.auth_token = original_token
-
-    def test_configure_both(self):
+    def test_configure_both(self, reset_config):
         """Test configure() updates both URL and token."""
-        from astro_airflow_mcp.server import _config
+        configure(url="https://prod.airflow.com", auth_token="prod_token")
+        assert _config.url == "https://prod.airflow.com"
+        assert _config.auth_token == "prod_token"
 
-        original_url = _config.url
-        original_token = _config.auth_token
-        try:
-            configure(url="https://prod.airflow.com", auth_token="prod_token")
-            assert _config.url == "https://prod.airflow.com"
-            assert _config.auth_token == "prod_token"
-        finally:
-            # Restore originals
-            _config.url = original_url
-            _config.auth_token = original_token
-
-    def test_configure_with_username_password(self):
+    def test_configure_with_username_password(self, reset_config):
         """Test configure() creates token manager with username/password."""
-        from astro_airflow_mcp.server import _config
+        configure(
+            url="https://test.airflow.com",
+            username="testuser",
+            password="testpass",
+        )
+        assert _config.url == "https://test.airflow.com"
+        assert _config.auth_token is None  # Direct token should be None
+        assert _config.token_manager is not None
+        assert _config.token_manager.username == "testuser"
+        assert _config.token_manager.password == "testpass"
 
-        original_url = _config.url
-        original_token = _config.auth_token
-        original_manager = _config.token_manager
-        try:
-            configure(
-                url="https://test.airflow.com",
-                username="testuser",
-                password="testpass",
-            )
-            assert _config.url == "https://test.airflow.com"
-            assert _config.auth_token is None  # Direct token should be None
-            assert _config.token_manager is not None
-            assert _config.token_manager.username == "testuser"
-            assert _config.token_manager.password == "testpass"
-        finally:
-            # Restore originals
-            _config.url = original_url
-            _config.auth_token = original_token
-            _config.token_manager = original_manager
-
-    def test_configure_auth_token_takes_precedence(self):
+    def test_configure_auth_token_takes_precedence(self, reset_config):
         """Test that auth_token takes precedence over username/password."""
-        from astro_airflow_mcp.server import _config
-
-        original_url = _config.url
-        original_token = _config.auth_token
-        original_manager = _config.token_manager
-        try:
-            configure(
-                auth_token="direct_token",
-                username="testuser",
-                password="testpass",
-            )
-            assert _config.auth_token == "direct_token"
-            assert _config.token_manager is None  # Token manager not created
-        finally:
-            # Restore originals
-            _config.url = original_url
-            _config.auth_token = original_token
-            _config.token_manager = original_manager
+        configure(
+            auth_token="direct_token",
+            username="testuser",
+            password="testpass",
+        )
+        assert _config.auth_token == "direct_token"
+        assert _config.token_manager is None  # Token manager not created
 
 
 class TestAirflowTokenManager:
@@ -410,38 +378,30 @@ class TestAirflowTokenManager:
 class TestAPIRetryOnAuthError:
     """Tests for API retry behavior on 401/403 errors."""
 
-    def test_call_api_retry_on_401(self, mocker):
+    def test_call_api_retry_on_401(self, mocker, reset_config):
         """Test _call_airflow_api retries on 401 with fresh token."""
-        from astro_airflow_mcp.server import _config
-
         # Setup token manager
-        original_manager = _config.token_manager
         mock_manager = mocker.Mock()
         mock_manager.get_token.side_effect = ["old_token", "new_token"]
         _config.token_manager = mock_manager
         _config.auth_token = None
 
-        try:
-            # First call returns 401, second succeeds
-            mock_response_401 = mocker.Mock()
-            mock_response_401.status_code = 401
+        # First call returns 401, second succeeds
+        mock_response_401 = mocker.Mock()
+        mock_response_401.status_code = 401
 
-            mock_response_ok = mocker.Mock()
-            mock_response_ok.status_code = 200
-            mock_response_ok.json.return_value = {"data": "success"}
-            mock_response_ok.raise_for_status = mocker.Mock()
+        mock_response_ok = mocker.Mock()
+        mock_response_ok.status_code = 200
+        mock_response_ok.json.return_value = {"data": "success"}
+        mock_response_ok.raise_for_status = mocker.Mock()
 
-            mock_get = mocker.patch(
-                "requests.get", side_effect=[mock_response_401, mock_response_ok]
-            )
+        mock_get = mocker.patch("requests.get", side_effect=[mock_response_401, mock_response_ok])
 
-            result = _call_airflow_api("dags")
+        result = _call_airflow_api("dags")
 
-            assert result == {"data": "success"}
-            assert mock_get.call_count == 2
-            mock_manager.invalidate.assert_called_once()
-        finally:
-            _config.token_manager = original_manager
+        assert result == {"data": "success"}
+        assert mock_get.call_count == 2
+        mock_manager.invalidate.assert_called_once()
 
     def test_call_api_no_retry_with_explicit_token(self, mocker):
         """Test _call_airflow_api does not retry when explicit token provided."""
@@ -455,93 +415,61 @@ class TestAPIRetryOnAuthError:
 
         assert "Error connecting to Airflow API" in str(exc_info.value)
 
-    def test_post_api_retry_on_403(self, mocker):
+    def test_post_api_retry_on_403(self, mocker, reset_config):
         """Test _post_airflow_api retries on 403 with fresh token."""
-        from astro_airflow_mcp.server import _config
-
         # Setup token manager
-        original_manager = _config.token_manager
         mock_manager = mocker.Mock()
         mock_manager.get_token.side_effect = ["old_token", "new_token"]
         _config.token_manager = mock_manager
         _config.auth_token = None
 
-        try:
-            # First call returns 403, second succeeds
-            mock_response_403 = mocker.Mock()
-            mock_response_403.status_code = 403
+        # First call returns 403, second succeeds
+        mock_response_403 = mocker.Mock()
+        mock_response_403.status_code = 403
 
-            mock_response_ok = mocker.Mock()
-            mock_response_ok.status_code = 200
-            mock_response_ok.json.return_value = {"dag_run_id": "test_run"}
-            mock_response_ok.raise_for_status = mocker.Mock()
+        mock_response_ok = mocker.Mock()
+        mock_response_ok.status_code = 200
+        mock_response_ok.json.return_value = {"dag_run_id": "test_run"}
+        mock_response_ok.raise_for_status = mocker.Mock()
 
-            mock_post = mocker.patch(
-                "requests.post", side_effect=[mock_response_403, mock_response_ok]
-            )
+        mock_post = mocker.patch("requests.post", side_effect=[mock_response_403, mock_response_ok])
 
-            result = _post_airflow_api("dags/test/dagRuns", json_data={})
+        result = _post_airflow_api("dags/test/dagRuns", json_data={})
 
-            assert result == {"dag_run_id": "test_run"}
-            assert mock_post.call_count == 2
-            mock_manager.invalidate.assert_called_once()
-        finally:
-            _config.token_manager = original_manager
+        assert result == {"dag_run_id": "test_run"}
+        assert mock_post.call_count == 2
+        mock_manager.invalidate.assert_called_once()
 
 
 class TestGetAuthToken:
     """Tests for the _get_auth_token helper function."""
 
-    def test_returns_direct_token(self):
+    def test_returns_direct_token(self, reset_config):
         """Test _get_auth_token returns direct auth_token when set."""
-        from astro_airflow_mcp.server import _config
+        _config.auth_token = "direct_token"
+        _config.token_manager = None
 
-        original_token = _config.auth_token
-        original_manager = _config.token_manager
-        try:
-            _config.auth_token = "direct_token"
-            _config.token_manager = None
+        token = _get_auth_token()
+        assert token == "direct_token"
 
-            token = _get_auth_token()
-            assert token == "direct_token"
-        finally:
-            _config.auth_token = original_token
-            _config.token_manager = original_manager
-
-    def test_returns_token_from_manager(self, mocker):
+    def test_returns_token_from_manager(self, mocker, reset_config):
         """Test _get_auth_token returns token from manager."""
-        from astro_airflow_mcp.server import _config
+        _config.auth_token = None
+        mock_manager = mocker.Mock()
+        mock_manager.get_token.return_value = "manager_token"
+        _config.token_manager = mock_manager
 
-        original_token = _config.auth_token
-        original_manager = _config.token_manager
-        try:
-            _config.auth_token = None
-            mock_manager = mocker.Mock()
-            mock_manager.get_token.return_value = "manager_token"
-            _config.token_manager = mock_manager
+        token = _get_auth_token()
+        assert token == "manager_token"
+        mock_manager.get_token.assert_called_once()
 
-            token = _get_auth_token()
-            assert token == "manager_token"
-            mock_manager.get_token.assert_called_once()
-        finally:
-            _config.auth_token = original_token
-            _config.token_manager = original_manager
-
-    def test_direct_token_takes_precedence(self, mocker):
+    def test_direct_token_takes_precedence(self, mocker, reset_config):
         """Test direct auth_token takes precedence over token manager."""
-        from astro_airflow_mcp.server import _config
+        _config.auth_token = "direct_token"
+        mock_manager = mocker.Mock()
+        mock_manager.get_token.return_value = "manager_token"
+        _config.token_manager = mock_manager
 
-        original_token = _config.auth_token
-        original_manager = _config.token_manager
-        try:
-            _config.auth_token = "direct_token"
-            mock_manager = mocker.Mock()
-            mock_manager.get_token.return_value = "manager_token"
-            _config.token_manager = mock_manager
-
-            token = _get_auth_token()
-            assert token == "direct_token"
-            mock_manager.get_token.assert_not_called()
-        finally:
-            _config.auth_token = original_token
-            _config.token_manager = original_manager
+        token = _get_auth_token()
+        assert token == "direct_token"
+        mock_manager.get_token.assert_not_called()
