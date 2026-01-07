@@ -29,39 +29,36 @@ class TestAirflowV2Adapter:
         adapter = AirflowV2Adapter(
             "http://localhost:8080",
             "2.9.0",
-            username="admin",
-            password="admin",
         )
         assert adapter.api_base_path == "/api/v1"
 
-    def test_setup_auth_bearer_token(self):
-        """Test auth setup with bearer token."""
+    def test_setup_auth_with_token_getter(self):
+        """Test auth setup with token getter."""
         adapter = AirflowV2Adapter(
             "http://localhost:8080",
             "2.9.0",
-            auth_token="test_token",
+            token_getter=lambda: "test_token",
         )
         headers, auth = adapter._setup_auth()
         assert headers["Authorization"] == "Bearer test_token"
         assert auth is None
 
-    def test_setup_auth_basic(self):
-        """Test auth setup with basic auth."""
+    def test_setup_auth_none(self):
+        """Test auth setup with no token getter."""
         adapter = AirflowV2Adapter(
             "http://localhost:8080",
             "2.9.0",
-            username="admin",
-            password="admin",
         )
         headers, auth = adapter._setup_auth()
-        assert "Authorization" not in headers
-        assert auth == ("admin", "admin")
+        assert headers == {}
+        assert auth is None
 
-    def test_setup_auth_none(self):
-        """Test auth setup with no credentials."""
+    def test_setup_auth_token_getter_returns_none(self):
+        """Test auth setup when token getter returns None."""
         adapter = AirflowV2Adapter(
             "http://localhost:8080",
             "2.9.0",
+            token_getter=lambda: None,
         )
         headers, auth = adapter._setup_auth()
         assert headers == {}
@@ -82,8 +79,7 @@ class TestAirflowV2Adapter:
         adapter = AirflowV2Adapter(
             "http://localhost:8080",
             "2.9.0",
-            username="admin",
-            password="admin",
+            token_getter=lambda: "test_token",
         )
 
         mock_response = mocker.Mock()
@@ -249,6 +245,30 @@ class TestVersionDetection:
         assert major == 2
         assert full == "2.9.0"
 
+    def test_detect_version_with_token_getter(self, mocker):
+        """Test version detection uses token getter for auth."""
+        mock_response = mocker.Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"version": "3.0.0"}
+
+        mock_client = mocker.Mock()
+        mock_client.get.return_value = mock_response
+        mock_client.__enter__ = mocker.Mock(return_value=mock_client)
+        mock_client.__exit__ = mocker.Mock(return_value=False)
+
+        mocker.patch("httpx.Client", return_value=mock_client)
+
+        major, full = detect_version(
+            "http://localhost:8080",
+            token_getter=lambda: "test_token",
+        )
+
+        assert major == 3
+        assert full == "3.0.0"
+        # Verify token was used in the request
+        call_kwargs = mock_client.get.call_args[1]
+        assert call_kwargs["headers"]["Authorization"] == "Bearer test_token"
+
 
 class TestAdapterFactory:
     """Tests for adapter factory."""
@@ -277,18 +297,18 @@ class TestAdapterFactory:
         assert isinstance(adapter, AirflowV2Adapter)
         assert adapter.version == "2.9.0"
 
-    def test_create_adapter_v2_default_auth(self, mocker):
-        """Test factory applies default auth for Airflow 2.x."""
+    def test_create_adapter_with_token_getter(self, mocker):
+        """Test factory passes token getter to adapter."""
         mocker.patch(
             "astro_airflow_mcp.adapters.detect_version",
-            return_value=(2, "2.9.0"),
+            return_value=(3, "3.0.0"),
         )
 
-        adapter = create_adapter("http://localhost:8080")
+        token_getter = lambda: "test_token"  # noqa: E731
+        adapter = create_adapter("http://localhost:8080", token_getter=token_getter)
 
-        # V2 defaults to admin:admin if no auth provided
-        assert adapter.username == "admin"
-        assert adapter.password == "admin"
+        assert isinstance(adapter, AirflowV3Adapter)
+        assert adapter._token_getter is token_getter
 
     def test_create_adapter_unsupported_version(self, mocker):
         """Test factory raises error for unsupported version."""

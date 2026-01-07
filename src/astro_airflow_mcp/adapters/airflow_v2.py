@@ -65,6 +65,37 @@ class AirflowV2Adapter(AirflowAdapter):
         """Get details of a task instance."""
         return self._call(f"dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances/{task_id}")
 
+    def get_task_logs(
+        self,
+        dag_id: str,
+        dag_run_id: str,
+        task_id: str,
+        try_number: int = 1,
+        map_index: int = -1,
+        full_content: bool = True,
+    ) -> dict[str, Any]:
+        """Get logs for a specific task instance.
+
+        Args:
+            dag_id: DAG ID
+            dag_run_id: DAG run ID
+            task_id: Task ID
+            try_number: Task try number (1-indexed, default 1)
+            map_index: Map index for mapped tasks (-1 for unmapped, default -1)
+            full_content: Whether to return full log content (default True)
+        """
+        endpoint = f"dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances/{task_id}/logs/{try_number}"
+        params: dict[str, Any] = {"full_content": full_content}
+        if map_index != -1:
+            params["map_index"] = map_index
+
+        try:
+            return self._call(endpoint, params=params)
+        except NotFoundError:
+            return self._handle_not_found(
+                "task logs", alternative="Check if the task instance exists and has been executed"
+            )
+
     def list_assets(self, limit: int = 100, offset: int = 0, **kwargs: Any) -> dict[str, Any]:
         """List assets (called 'datasets' in Airflow 2).
 

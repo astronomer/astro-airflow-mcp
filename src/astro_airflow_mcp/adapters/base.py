@@ -1,6 +1,7 @@
 """Base adapter interface for Airflow API clients."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -25,24 +26,22 @@ class AirflowAdapter(ABC):
         self,
         airflow_url: str,
         version: str,
-        auth_token: str | None = None,
-        username: str | None = None,
-        password: str | None = None,
+        token_getter: Callable[[], str | None] | None = None,
+        basic_auth_getter: Callable[[], tuple[str, str] | None] | None = None,
     ):
         """Initialize adapter with connection details.
 
         Args:
             airflow_url: Base URL of Airflow webserver
             version: Full version string (e.g., "3.1.3")
-            auth_token: Optional Bearer token for authentication
-            username: Optional username for basic auth
-            password: Optional password for basic auth
+            token_getter: Callable that returns current auth token (or None)
+            basic_auth_getter: Callable that returns (username, password) tuple or None
+                             Used as fallback for Airflow 2.x which doesn't support token auth
         """
         self.airflow_url = airflow_url
         self.version = version
-        self.auth_token = auth_token
-        self.username = username
-        self.password = password
+        self._token_getter = token_getter
+        self._basic_auth_getter = basic_auth_getter
 
     @property
     @abstractmethod
@@ -51,7 +50,10 @@ class AirflowAdapter(ABC):
         pass
 
     def _setup_auth(self) -> tuple[dict[str, str], tuple[str, str] | None]:
-        """Set up authentication headers and credentials.
+        """Set up authentication using token or basic auth.
+
+        Tries token-based auth first (Airflow 3.x), falls back to basic auth
+        (Airflow 2.x) if token is not available.
 
         Returns:
             Tuple of (headers dict, auth tuple or None)
@@ -59,10 +61,16 @@ class AirflowAdapter(ABC):
         headers: dict[str, str] = {}
         auth: tuple[str, str] | None = None
 
-        if self.auth_token:
-            headers["Authorization"] = f"Bearer {self.auth_token}"
-        elif self.username and self.password:
-            auth = (self.username, self.password)
+        # Try token-based auth first
+        if self._token_getter:
+            token = self._token_getter()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                return headers, None
+
+        # Fall back to basic auth if no token available
+        if self._basic_auth_getter:
+            auth = self._basic_auth_getter()
 
         return headers, auth
 
@@ -179,6 +187,28 @@ class AirflowAdapter(ABC):
     @abstractmethod
     def get_task_instance(self, dag_id: str, dag_run_id: str, task_id: str) -> dict[str, Any]:
         """Get details of a task instance."""
+        pass
+
+    @abstractmethod
+    def get_task_logs(
+        self,
+        dag_id: str,
+        dag_run_id: str,
+        task_id: str,
+        try_number: int = 1,
+        map_index: int = -1,
+        full_content: bool = True,
+    ) -> dict[str, Any]:
+        """Get logs for a specific task instance.
+
+        Args:
+            dag_id: DAG ID
+            dag_run_id: DAG run ID
+            task_id: Task ID
+            try_number: Task try number (1-indexed, default 1)
+            map_index: Map index for mapped tasks (-1 for unmapped, default -1)
+            full_content: Whether to return full log content (default True)
+        """
         pass
 
     # Asset/Dataset Operations

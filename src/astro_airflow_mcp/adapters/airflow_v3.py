@@ -2,85 +2,17 @@
 
 from typing import Any
 
-import httpx
-
 from astro_airflow_mcp.adapters.base import AirflowAdapter, NotFoundError
 
 
 class AirflowV3Adapter(AirflowAdapter):
     """Adapter for Airflow 3.x API (/api/v2).
 
-    Airflow 3.x uses OAuth2 Password Bearer authentication:
-    - If auth_token is provided, it's used directly as a Bearer token
-    - If username/password are provided, the adapter exchanges them for a JWT
-      via the /auth/token endpoint and uses the JWT for subsequent calls
+    Authentication is handled by the token_getter callback provided at init time,
+    which should return a valid JWT token from the central TokenManager.
 
     See: https://github.com/apache/airflow-client-python
     """
-
-    def __init__(
-        self,
-        airflow_url: str,
-        version: str,
-        auth_token: str | None = None,
-        username: str | None = None,
-        password: str | None = None,
-    ):
-        """Initialize Airflow 3 adapter with OAuth2 token support.
-
-        Args:
-            airflow_url: Base URL of Airflow webserver
-            version: Full version string (e.g., "3.2.0")
-            auth_token: Optional pre-obtained JWT token
-            username: Optional username for OAuth2 token exchange
-            password: Optional password for OAuth2 token exchange
-        """
-        # If username/password provided but no token, exchange for JWT
-        if username and password and not auth_token:
-            auth_token = self._exchange_for_token(airflow_url, username, password)
-
-        # Call parent with the token (password auth now converted to JWT)
-        super().__init__(airflow_url, version, auth_token=auth_token)
-
-    @staticmethod
-    def _exchange_for_token(airflow_url: str, username: str, password: str) -> str:
-        """Exchange username/password for a JWT token via OAuth2 endpoint.
-
-        Airflow 3 uses OAuth2 Password Bearer flow - POST credentials to
-        /auth/token and receive a JWT access_token.
-
-        Args:
-            airflow_url: Base URL of Airflow webserver
-            username: Airflow username
-            password: Airflow password
-
-        Returns:
-            JWT access token string
-
-        Raises:
-            RuntimeError: If token exchange fails
-        """
-        token_url = f"{airflow_url}/auth/token"
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                response = client.post(
-                    token_url,
-                    data={"username": username, "password": password},
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                )
-                response.raise_for_status()
-                data = response.json()
-                token = data.get("access_token")
-                if not token:
-                    raise RuntimeError(f"No access_token in response from {token_url}")
-                return token
-        except httpx.HTTPStatusError as e:
-            raise RuntimeError(
-                f"Failed to obtain JWT token from {token_url}: "
-                f"{e.response.status_code} - {e.response.text}"
-            ) from e
-        except httpx.RequestError as e:
-            raise RuntimeError(f"Failed to connect to {token_url}: {e}") from e
 
     @property
     def api_base_path(self) -> str:
@@ -268,7 +200,13 @@ class AirflowV3Adapter(AirflowAdapter):
             return self._handle_not_found(f"dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances")
 
     def get_task_logs(
-        self, dag_id: str, dag_run_id: str, task_id: str, try_number: int = 1
+        self,
+        dag_id: str,
+        dag_run_id: str,
+        task_id: str,
+        try_number: int = 1,
+        map_index: int = -1,
+        full_content: bool = True,
     ) -> dict[str, Any]:
         """Get logs for a specific task instance.
 
@@ -276,14 +214,19 @@ class AirflowV3Adapter(AirflowAdapter):
             dag_id: DAG ID
             dag_run_id: DAG run ID
             task_id: Task ID
-            try_number: Try number for the task (default 1)
+            try_number: Task try number (1-indexed, default 1)
+            map_index: Map index for mapped tasks (-1 for unmapped, default -1)
+            full_content: Whether to return full log content (default True)
 
         Available in Airflow 3.0+.
         """
+        endpoint = f"dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances/{task_id}/logs/{try_number}"
+        params: dict[str, Any] = {"full_content": full_content}
+        if map_index != -1:
+            params["map_index"] = map_index
+
         try:
-            return self._call(
-                f"dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances/{task_id}/logs/{try_number}"
-            )
+            return self._call(endpoint, params=params)
         except NotFoundError:
             return self._handle_not_found(
                 "task logs", alternative="Check if the task instance exists and has been executed"
