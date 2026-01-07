@@ -1401,7 +1401,6 @@ def trigger_dag(dag_id: str, conf: dict | None = None) -> str:
 def trigger_dag_and_wait(
     dag_id: str,
     conf: dict | None = None,
-    poll_interval: float = 5.0,
     timeout: float = 1800.0,
 ) -> str:
     """Trigger a DAG run and wait for it to complete before returning.
@@ -1414,7 +1413,7 @@ def trigger_dag_and_wait(
 
     This is a BLOCKING operation that will:
     1. Trigger the specified DAG
-    2. Poll for status every few seconds (configurable)
+    2. Poll for status automatically (interval scales with timeout)
     3. Return once the DAG run reaches a terminal state (success, failed, upstream_failed)
     4. Include details about any failed tasks if the run was not successful
 
@@ -1438,12 +1437,14 @@ def trigger_dag_and_wait(
         dag_id: The ID of the DAG to trigger (e.g., "example_dag")
         conf: Optional configuration dictionary to pass to the DAG run.
               This will be available in the DAG via context['dag_run'].conf
-        poll_interval: Seconds between status checks (default: 5.0)
         timeout: Maximum time to wait in seconds (default: 1800.0 / 30 minutes)
 
     Returns:
         JSON with final DAG run status and any failed task details
     """
+    # Calculate poll interval based on timeout (2-30 seconds range)
+    poll_interval = max(2.0, min(30.0, timeout / 120))
+
     return _trigger_dag_and_wait_impl(
         dag_id=dag_id,
         conf=conf,
