@@ -1329,12 +1329,9 @@ def _trigger_dag_and_wait_impl(
 
         # Check if we've reached a terminal state
         if current_state in TERMINAL_DAG_RUN_STATES:
+            # Start with full DAG run response, then add our fields
             result = {
-                "dag_id": dag_id,
-                "dag_run_id": dag_run_id,
-                "state": current_state,
-                "start_date": status_data.get("start_date"),
-                "end_date": status_data.get("end_date"),
+                **status_data,
                 "timed_out": False,
                 "elapsed_seconds": round(time.time() - start_time, 2),
             }
