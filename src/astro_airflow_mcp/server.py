@@ -1243,7 +1243,7 @@ def _trigger_dag_and_wait_impl(
     dag_id: str,
     conf: dict | None = None,
     poll_interval: float = 5.0,
-    timeout: float = 1800.0,
+    timeout: float = 3600.0,
     airflow_url: str = DEFAULT_AIRFLOW_URL,
     auth_token: str | None = None,
 ) -> str:
@@ -1401,7 +1401,7 @@ def trigger_dag(dag_id: str, conf: dict | None = None) -> str:
 def trigger_dag_and_wait(
     dag_id: str,
     conf: dict | None = None,
-    timeout: float = 1800.0,
+    timeout: float = 3600.0,
 ) -> str:
     """Trigger a DAG run and wait for it to complete before returning.
 
@@ -1442,8 +1442,8 @@ def trigger_dag_and_wait(
     Returns:
         JSON with final DAG run status and any failed task details
     """
-    # Calculate poll interval based on timeout (2-30 seconds range)
-    poll_interval = max(2.0, min(30.0, timeout / 120))
+    # Calculate poll interval based on timeout (2-10 seconds range)
+    poll_interval = max(2.0, min(10.0, timeout / 120))
 
     return _trigger_dag_and_wait_impl(
         dag_id=dag_id,
