@@ -17,6 +17,8 @@ DEFAULT_LIMIT = 100
 DEFAULT_OFFSET = 0
 # Buffer time before token expiry to trigger refresh (5 minutes)
 TOKEN_REFRESH_BUFFER_SECONDS = 300
+# Terminal states for DAG runs (polling stops when reached)
+TERMINAL_DAG_RUN_STATES = {"success", "failed", "upstream_failed"}
 
 
 class AirflowTokenManager:
@@ -1190,6 +1192,167 @@ def _trigger_dag_impl(
         return str(e)
 
 
+def _get_failed_task_instances(
+    dag_id: str,
+    dag_run_id: str,
+    airflow_url: str,
+    auth_token: str | None,
+) -> list[dict[str, Any]]:
+    """Fetch task instances that failed in a DAG run.
+
+    Args:
+        dag_id: The ID of the DAG
+        dag_run_id: The ID of the DAG run
+        airflow_url: The base URL of the Airflow webserver
+        auth_token: Optional Bearer token for authentication
+
+    Returns:
+        List of failed task instance details
+    """
+    try:
+        endpoint = f"dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances"
+        data = _call_airflow_api(
+            endpoint,
+            airflow_url,
+            auth_token=auth_token,
+        )
+
+        failed_states = {"failed", "upstream_failed"}
+        failed_tasks = []
+
+        if "task_instances" in data:
+            for task in data["task_instances"]:
+                if task.get("state") in failed_states:
+                    failed_tasks.append(
+                        {
+                            "task_id": task.get("task_id"),
+                            "state": task.get("state"),
+                            "try_number": task.get("try_number"),
+                            "start_date": task.get("start_date"),
+                            "end_date": task.get("end_date"),
+                        }
+                    )
+
+        return failed_tasks
+    except Exception:
+        # If we can't fetch failed tasks, return empty list rather than failing
+        return []
+
+
+def _trigger_dag_and_wait_impl(
+    dag_id: str,
+    conf: dict | None = None,
+    poll_interval: float = 5.0,
+    timeout: float = 1800.0,
+    airflow_url: str = DEFAULT_AIRFLOW_URL,
+    auth_token: str | None = None,
+) -> str:
+    """Internal implementation for triggering a DAG and waiting for completion.
+
+    Args:
+        dag_id: The ID of the DAG to trigger
+        conf: Optional configuration dictionary to pass to the DAG run
+        poll_interval: Seconds between status checks (default: 5.0)
+        timeout: Maximum time to wait in seconds (default: 1800.0 / 30 minutes)
+        airflow_url: The base URL of the Airflow webserver
+        auth_token: Optional Bearer token for authentication
+
+    Returns:
+        JSON string containing the final DAG run status and any failed task details
+    """
+    # Step 1: Trigger the DAG
+    trigger_response = _trigger_dag_impl(
+        dag_id=dag_id,
+        conf=conf,
+        airflow_url=airflow_url,
+        auth_token=auth_token,
+    )
+
+    try:
+        trigger_data = json.loads(trigger_response)
+    except json.JSONDecodeError:
+        return json.dumps(
+            {
+                "error": f"Failed to trigger DAG: {trigger_response}",
+                "timed_out": False,
+            },
+            indent=2,
+        )
+
+    dag_run_id = trigger_data.get("dag_run_id")
+    if not dag_run_id:
+        return json.dumps(
+            {
+                "error": f"No dag_run_id in trigger response: {trigger_response}",
+                "timed_out": False,
+            },
+            indent=2,
+        )
+
+    # Step 2: Poll for completion
+    start_time = time.time()
+    current_state = trigger_data.get("state", "queued")
+
+    while True:
+        elapsed = time.time() - start_time
+
+        # Check timeout
+        if elapsed >= timeout:
+            result: dict[str, Any] = {
+                "dag_id": dag_id,
+                "dag_run_id": dag_run_id,
+                "state": current_state,
+                "timed_out": True,
+                "elapsed_seconds": round(elapsed, 2),
+                "message": f"Timed out after {timeout} seconds. DAG run is still {current_state}.",
+            }
+            return json.dumps(result, indent=2)
+
+        # Wait before polling
+        time.sleep(poll_interval)
+
+        # Get current status
+        status_response = _get_dag_run_impl(
+            dag_id=dag_id,
+            dag_run_id=dag_run_id,
+            airflow_url=airflow_url,
+            auth_token=auth_token,
+        )
+
+        try:
+            status_data = json.loads(status_response)
+        except json.JSONDecodeError:
+            # If we can't parse, continue polling
+            continue
+
+        current_state = status_data.get("state", current_state)
+
+        # Check if we've reached a terminal state
+        if current_state in TERMINAL_DAG_RUN_STATES:
+            result = {
+                "dag_id": dag_id,
+                "dag_run_id": dag_run_id,
+                "state": current_state,
+                "start_date": status_data.get("start_date"),
+                "end_date": status_data.get("end_date"),
+                "timed_out": False,
+                "elapsed_seconds": round(time.time() - start_time, 2),
+            }
+
+            # Fetch failed task details if not successful
+            if current_state != "success":
+                failed_tasks = _get_failed_task_instances(
+                    dag_id=dag_id,
+                    dag_run_id=dag_run_id,
+                    airflow_url=airflow_url,
+                    auth_token=auth_token,
+                )
+                if failed_tasks:
+                    result["failed_tasks"] = failed_tasks
+
+            return json.dumps(result, indent=2)
+
+
 @mcp.tool()
 def trigger_dag(dag_id: str, conf: dict | None = None) -> str:
     """Trigger a new DAG run (start a workflow execution manually).
@@ -1229,6 +1392,63 @@ def trigger_dag(dag_id: str, conf: dict | None = None) -> str:
     return _trigger_dag_impl(
         dag_id=dag_id,
         conf=conf,
+        airflow_url=_config.url,
+        auth_token=_config.auth_token,
+    )
+
+
+@mcp.tool()
+def trigger_dag_and_wait(
+    dag_id: str,
+    conf: dict | None = None,
+    poll_interval: float = 5.0,
+    timeout: float = 1800.0,
+) -> str:
+    """Trigger a DAG run and wait for it to complete before returning.
+
+    Use this tool when the user asks to:
+    - "Run DAG X and wait for it to finish" or "Execute DAG Y and tell me when it's done"
+    - "Trigger DAG Z and wait for completion" or "Run this pipeline synchronously"
+    - "Start DAG X and let me know the result" or "Execute and monitor DAG Y"
+    - "Run DAG X and show me if it succeeds or fails"
+
+    This is a BLOCKING operation that will:
+    1. Trigger the specified DAG
+    2. Poll for status every few seconds (configurable)
+    3. Return once the DAG run reaches a terminal state (success, failed, upstream_failed)
+    4. Include details about any failed tasks if the run was not successful
+
+    IMPORTANT: This tool blocks until the DAG completes or times out. For long-running
+    DAGs, consider using `trigger_dag` instead and checking status separately with
+    `get_dag_run`.
+
+    Default timeout is 30 minutes. Adjust the `timeout` parameter for longer DAGs.
+
+    Returns information about the completed DAG run including:
+    - dag_id: Which DAG was run
+    - dag_run_id: Unique identifier for this execution
+    - state: Final state (success, failed, upstream_failed)
+    - start_date: When execution started
+    - end_date: When execution completed
+    - elapsed_seconds: How long we waited
+    - timed_out: Whether we hit the timeout before completion
+    - failed_tasks: List of failed task details (only if state != success)
+
+    Args:
+        dag_id: The ID of the DAG to trigger (e.g., "example_dag")
+        conf: Optional configuration dictionary to pass to the DAG run.
+              This will be available in the DAG via context['dag_run'].conf
+        poll_interval: Seconds between status checks (default: 5.0)
+        timeout: Maximum time to wait in seconds (default: 1800.0 / 30 minutes)
+
+    Returns:
+        JSON with final DAG run status and any failed task details
+    """
+    return _trigger_dag_and_wait_impl(
+        dag_id=dag_id,
+        conf=conf,
+        poll_interval=poll_interval,
+        timeout=timeout,
         airflow_url=_config.url,
         auth_token=_config.auth_token,
     )
