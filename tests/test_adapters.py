@@ -64,8 +64,8 @@ class TestAirflowV2Adapter:
         assert headers == {}
         assert auth is None
 
-    def test_get_dag_stats_call(self, mocker):
-        """Test V2 adapter calls dagStats endpoint correctly."""
+    def test_get_dag_stats_call_with_dag_ids(self, mocker):
+        """Test V2 adapter calls dagStats endpoint correctly with specific dag_ids."""
         adapter = AirflowV2Adapter(
             "http://localhost:8080",
             "2.9.0",
@@ -98,6 +98,59 @@ class TestAirflowV2Adapter:
         call_args = mock_client.get.call_args
         assert "/api/v1/dagStats" in call_args[0][0]
         assert call_args[1]["params"]["dag_ids"] == "example_dag"
+
+    def test_get_dag_stats_call_without_dag_ids(self, mocker):
+        """Test V2 adapter fetches all DAGs first when dag_ids not provided."""
+        adapter = AirflowV2Adapter(
+            "http://localhost:8080",
+            "2.9.0",
+        )
+
+        # Mock list_dags response
+        dags_response = mocker.Mock()
+        dags_response.json.return_value = {
+            "dags": [
+                {"dag_id": "dag1"},
+                {"dag_id": "dag2"},
+            ],
+            "total_entries": 2,
+        }
+        dags_response.status_code = 200
+        dags_response.raise_for_status = mocker.Mock()
+
+        # Mock dagStats response
+        stats_response = mocker.Mock()
+        stats_response.json.return_value = {
+            "dags": [
+                {"dag_id": "dag1", "stats": [{"state": "success", "count": 3}]},
+                {"dag_id": "dag2", "stats": [{"state": "failed", "count": 1}]},
+            ],
+            "total_entries": 2,
+        }
+        stats_response.status_code = 200
+        stats_response.raise_for_status = mocker.Mock()
+
+        mock_client = mocker.Mock()
+        # First call returns dags, second call returns stats
+        mock_client.get.side_effect = [dags_response, stats_response]
+        mock_client.__enter__ = mocker.Mock(return_value=mock_client)
+        mock_client.__exit__ = mocker.Mock(return_value=False)
+
+        mocker.patch("httpx.Client", return_value=mock_client)
+
+        result = adapter.get_dag_stats(dag_ids=None)
+
+        assert result["total_entries"] == 2
+        assert mock_client.get.call_count == 2
+
+        # First call should be to list_dags
+        first_call = mock_client.get.call_args_list[0]
+        assert "/api/v1/dags" in first_call[0][0]
+
+        # Second call should be to dagStats with all dag_ids
+        second_call = mock_client.get.call_args_list[1]
+        assert "/api/v1/dagStats" in second_call[0][0]
+        assert second_call[1]["params"]["dag_ids"] == "dag1,dag2"
 
     def test_list_dags_call(self, mocker):
         """Test list_dags makes correct API call."""

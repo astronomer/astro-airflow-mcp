@@ -592,29 +592,33 @@ def get_dag_source(dag_id: str) -> str:
     return _get_dag_source_impl(dag_id=dag_id)
 
 
-def _get_dag_stats_impl() -> str:
+def _get_dag_stats_impl(dag_ids: list[str] | None = None) -> str:
     """Internal implementation for getting DAG statistics from Airflow.
+
+    Args:
+        dag_ids: Optional list of DAG IDs to get stats for. If None, gets stats for all DAGs.
 
     Returns:
         JSON string containing DAG run statistics by state
     """
     try:
         adapter = _get_adapter()
-        stats_data = adapter.get_dag_stats()
+        stats_data = adapter.get_dag_stats(dag_ids=dag_ids)
         return json.dumps(stats_data, indent=2)
     except Exception as e:
         return str(e)
 
 
 @mcp.tool()
-def get_dag_stats() -> str:
-    """Get statistics about DAG runs across all DAGs (success/failure counts by state).
+def get_dag_stats(dag_ids: list[str] | None = None) -> str:
+    """Get statistics about DAG runs (success/failure counts by state).
 
     Use this tool when the user asks about:
     - "What's the overall health of my DAGs?" or "Show me DAG statistics"
     - "How many DAG runs succeeded/failed?" or "What's the success rate?"
     - "Give me a summary of DAG run states"
     - "How many runs are currently running/queued?"
+    - "Show me stats for specific DAGs"
 
     Returns statistics showing counts of DAG runs grouped by state:
     - success: Number of successful runs
@@ -623,10 +627,13 @@ def get_dag_stats() -> str:
     - queued: Number of queued runs
     - And other possible states
 
+    Args:
+        dag_ids: Optional list of DAG IDs to filter by. If not provided, returns stats for all DAGs.
+
     Returns:
         JSON with DAG run statistics organized by DAG and state
     """
-    return _get_dag_stats_impl()
+    return _get_dag_stats_impl(dag_ids=dag_ids)
 
 
 def _list_dag_warnings_impl(

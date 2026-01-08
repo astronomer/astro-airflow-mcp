@@ -1,6 +1,6 @@
 # Makefile for airflow-mcp development
 
-.PHONY: help install install-dev install-dev-ci install-hooks run docker-build docker-run build test lint format type-check security check clean pre-commit
+.PHONY: help install install-dev install-dev-ci install-hooks run docker-build docker-run build test test-integration test-integration-v2 test-integration-v3 lint format type-check security check clean pre-commit
 
 help:  ## Show this help message
 	@echo "Available commands:"
@@ -39,8 +39,26 @@ docker-run:  ## Run Docker container (http mode with 0.0.0.0 binding for contain
 build:  ## Build distribution packages (wheel and sdist)
 	uv build
 
-test:  ## Run tests
-	uv run pytest
+test:  ## Run unit tests (fast, no external dependencies)
+	uv run pytest tests/ --ignore=tests/integration/
+
+test-integration:  ## Run integration tests against a running Airflow instance
+	./scripts/run-integration-tests.sh
+
+test-integration-v2:  ## Start Airflow 2.x and run integration tests
+	docker compose -f docker-compose.test.yml --profile airflow2 up -d --wait
+	./scripts/run-integration-tests.sh http://localhost:8080 admin admin || true
+	docker compose -f docker-compose.test.yml --profile airflow2 down
+
+test-integration-v3:  ## Start Airflow 3.x and run integration tests
+	docker compose -f docker-compose.test.yml --profile airflow3 up -d --wait
+	./scripts/run-integration-tests.sh http://localhost:8081 admin admin || true
+	docker compose -f docker-compose.test.yml --profile airflow3 down
+
+test-all:  ## Run unit tests + integration tests against both Airflow versions
+	$(MAKE) test
+	$(MAKE) test-integration-v2
+	$(MAKE) test-integration-v3
 
 lint:  ## Run linting checks (ruff) - reports issues only
 	uv run ruff check src/ tests/
