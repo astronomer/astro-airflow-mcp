@@ -8,8 +8,7 @@ import pytest
 
 from astro_airflow_mcp.adapters import create_adapter, detect_version
 
-# Test DAG that's mounted via docker-compose (fast, unpaused)
-TEST_DAG_ID = "integration_test_dag"
+from .conftest import TEST_DAG_ID
 
 
 class TestVersionDetection:
@@ -309,8 +308,7 @@ class TestDAGRunEndpoints:
 class TestTaskEndpoints:
     """Test task and task instance operations.
 
-    Tests that need a completed DAG run trigger their own run and wait
-    for completion to ensure they are self-contained.
+    Tests that need a completed DAG run use the completed_dag_run session fixture.
     """
 
     @pytest.fixture
@@ -321,34 +319,6 @@ class TestTaskEndpoints:
             basic_auth_getter=lambda: (airflow_username, airflow_password),
         )
 
-    def _get_completed_dag_run(self, adapter, timeout_seconds: int = 60):
-        """Get a completed DAG run for testing, triggering one if needed."""
-        import time
-
-        dag_id = TEST_DAG_ID
-
-        # Check for existing completed run first
-        existing_runs = adapter.list_dag_runs(dag_id=dag_id, limit=5)
-        for run in existing_runs.get("dag_runs", []):
-            if run.get("state") in ("success", "failed"):
-                print(f"Using existing completed run {run['dag_run_id']}")
-                return dag_id, run["dag_run_id"]
-
-        # Trigger a new run
-        result = adapter.trigger_dag_run(dag_id=dag_id)
-        dag_run_id = result["dag_run_id"]
-        print(f"Triggered {dag_id} run {dag_run_id}, waiting for completion...")
-
-        # Wait for completion
-        for _ in range(timeout_seconds // 2):
-            run = adapter.get_dag_run(dag_id, dag_run_id)
-            if run.get("state") in ("success", "failed"):
-                print(f"DAG run completed with state: {run.get('state')}")
-                return dag_id, dag_run_id
-            time.sleep(2)
-
-        pytest.skip(f"DAG run did not complete within {timeout_seconds} seconds")
-
     def test_get_task(self, adapter):
         """Should get details of a specific task definition."""
         result = adapter.get_task(TEST_DAG_ID, "quick_task")
@@ -356,12 +326,9 @@ class TestTaskEndpoints:
         assert result.get("task_id") == "quick_task"
         print(f"Got task quick_task from DAG {TEST_DAG_ID}")
 
-    def test_get_task_instances(self, adapter):
-        """Should list task instances for a DAG run.
-
-        Triggers a DAG run and waits for completion before testing.
-        """
-        dag_id, dag_run_id = self._get_completed_dag_run(adapter)
+    def test_get_task_instances(self, adapter, completed_dag_run):
+        """Should list task instances for a DAG run."""
+        dag_id, dag_run_id = completed_dag_run
 
         result = adapter.get_task_instances(dag_id, dag_run_id, limit=100)
 
@@ -369,12 +336,9 @@ class TestTaskEndpoints:
         assert isinstance(result["task_instances"], list)
         print(f"Found {len(result['task_instances'])} task instances for run {dag_run_id}")
 
-    def test_get_task_instance(self, adapter):
-        """Should get details of a specific task instance.
-
-        Triggers a DAG run and waits for completion before testing.
-        """
-        dag_id, dag_run_id = self._get_completed_dag_run(adapter)
+    def test_get_task_instance(self, adapter, completed_dag_run):
+        """Should get details of a specific task instance."""
+        dag_id, dag_run_id = completed_dag_run
 
         instances = adapter.get_task_instances(dag_id, dag_run_id, limit=10)
         if not instances.get("task_instances"):
@@ -388,18 +352,13 @@ class TestTaskEndpoints:
         assert "state" in result
         print(f"Got task instance {task_id} with state: {result.get('state')}")
 
-    def test_get_task_logs(self, adapter):
-        """Should get logs for a task instance.
-
-        Triggers a DAG run and waits for completion. Logs require a task
-        that has actually executed (not just queued).
-        """
-        dag_id, dag_run_id = self._get_completed_dag_run(adapter)
+    def test_get_task_logs(self, adapter, completed_dag_run):
+        """Should get logs for a task instance."""
+        dag_id, dag_run_id = completed_dag_run
 
         instances = adapter.get_task_instances(dag_id, dag_run_id, limit=20)
         target_task = None
         for ti in instances.get("task_instances", []):
-            # Look for a task that actually ran (has logs)
             if ti.get("state") in ("success", "failed", "upstream_failed"):
                 target_task = ti
                 break
@@ -419,7 +378,6 @@ class TestTaskEndpoints:
         )
 
         assert isinstance(result, dict)
-        # Logs might be in 'content' or return availability info
         if "available" not in result:
             assert "content" in result or len(result) > 0
         print(f"Got logs for task {task_id} (try {try_number}): {len(str(result))} chars")
