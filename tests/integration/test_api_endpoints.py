@@ -280,50 +280,6 @@ class TestDAGRunEndpoints:
             basic_auth_getter=lambda: (airflow_username, airflow_password),
         )
 
-    def test_list_dag_runs_all(self, adapter):
-        """Should list DAG runs across all DAGs.
-
-        Note: When dag_id is None, uses '~' for Airflow 2.x compatibility.
-        """
-        result = adapter.list_dag_runs(dag_id=None, limit=10)
-
-        assert "dag_runs" in result
-        assert isinstance(result["dag_runs"], list)
-        print(f"Found {len(result['dag_runs'])} total DAG runs")
-
-    def test_list_dag_runs_for_specific_dag(self, adapter):
-        """Should list DAG runs for a specific DAG."""
-        dags = adapter.list_dags(limit=1)
-        if not dags.get("dags"):
-            pytest.skip("No DAGs available to test")
-
-        dag_id = dags["dags"][0]["dag_id"]
-        result = adapter.list_dag_runs(dag_id=dag_id, limit=10)
-
-        assert "dag_runs" in result
-        assert isinstance(result["dag_runs"], list)
-        # All runs should be for the specified DAG
-        for run in result["dag_runs"]:
-            assert run.get("dag_id") == dag_id
-        print(f"Found {len(result['dag_runs'])} runs for DAG {dag_id}")
-
-    def test_get_dag_run(self, adapter):
-        """Should get details for a specific DAG run."""
-        runs = adapter.list_dag_runs(dag_id=None, limit=1)
-        if not runs.get("dag_runs"):
-            pytest.skip("No DAG runs available to test")
-
-        run = runs["dag_runs"][0]
-        dag_id = run["dag_id"]
-        dag_run_id = run["dag_run_id"]
-
-        result = adapter.get_dag_run(dag_id, dag_run_id)
-
-        assert result.get("dag_id") == dag_id
-        assert result.get("dag_run_id") == dag_run_id
-        assert "state" in result
-        print(f"Got run {dag_run_id} with state: {result.get('state')}")
-
     def test_trigger_dag_run(self, adapter):
         """Should trigger a new DAG run.
 
@@ -357,9 +313,62 @@ class TestDAGRunEndpoints:
         assert "execution_date" in result or "logical_date" in result
         print(f"Triggered run {result.get('dag_run_id')} for DAG {dag_id}")
 
+    def test_list_dag_runs_all(self, adapter):
+        """Should list DAG runs across all DAGs.
+
+        Note: When dag_id is None, uses '~' for Airflow 2.x compatibility.
+        """
+        result = adapter.list_dag_runs(dag_id=None, limit=10)
+
+        assert "dag_runs" in result
+        assert isinstance(result["dag_runs"], list)
+        print(f"Found {len(result['dag_runs'])} total DAG runs")
+
+    def test_list_dag_runs_for_specific_dag(self, adapter):
+        """Should list DAG runs for a specific DAG."""
+        dags = adapter.list_dags(limit=1)
+        if not dags.get("dags"):
+            pytest.skip("No DAGs available to test")
+
+        dag_id = dags["dags"][0]["dag_id"]
+        result = adapter.list_dag_runs(dag_id=dag_id, limit=10)
+
+        assert "dag_runs" in result
+        assert isinstance(result["dag_runs"], list)
+        # All runs should be for the specified DAG
+        for run in result["dag_runs"]:
+            assert run.get("dag_id") == dag_id
+        print(f"Found {len(result['dag_runs'])} runs for DAG {dag_id}")
+
+    def test_get_dag_run(self, adapter):
+        """Should get details for a specific DAG run.
+
+        Triggers a DAG run first to ensure one exists for testing.
+        """
+        # First trigger a DAG run to ensure one exists
+        dags = adapter.list_dags(limit=1)
+        if not dags.get("dags"):
+            pytest.skip("No DAGs available to test")
+
+        dag_id = dags["dags"][0]["dag_id"]
+        triggered = adapter.trigger_dag_run(dag_id=dag_id)
+        dag_run_id = triggered["dag_run_id"]
+
+        # Now get that run
+        result = adapter.get_dag_run(dag_id, dag_run_id)
+
+        assert result.get("dag_id") == dag_id
+        assert result.get("dag_run_id") == dag_run_id
+        assert "state" in result
+        print(f"Got run {dag_run_id} with state: {result.get('state')}")
+
 
 class TestTaskEndpoints:
-    """Test task and task instance operations."""
+    """Test task and task instance operations.
+
+    Tests that need a completed DAG run trigger their own run and wait
+    for completion to ensure they are self-contained.
+    """
 
     @pytest.fixture
     def adapter(self, airflow_url: str, airflow_username: str, airflow_password: str):
@@ -368,6 +377,37 @@ class TestTaskEndpoints:
             airflow_url,
             basic_auth_getter=lambda: (airflow_username, airflow_password),
         )
+
+    def _get_completed_dag_run(self, adapter, timeout_seconds: int = 60):
+        """Get a completed DAG run for testing, triggering one if needed.
+
+        Uses the integration_test_dag which is fast and unpaused.
+        """
+        import time
+
+        dag_id = "integration_test_dag"
+
+        # Check for existing completed run first
+        existing_runs = adapter.list_dag_runs(dag_id=dag_id, limit=5)
+        for run in existing_runs.get("dag_runs", []):
+            if run.get("state") in ("success", "failed"):
+                print(f"Using existing completed run {run['dag_run_id']}")
+                return dag_id, run["dag_run_id"]
+
+        # Trigger a new run
+        result = adapter.trigger_dag_run(dag_id=dag_id)
+        dag_run_id = result["dag_run_id"]
+        print(f"Triggered {dag_id} run {dag_run_id}, waiting for completion...")
+
+        # Wait for completion
+        for _ in range(timeout_seconds // 2):
+            run = adapter.get_dag_run(dag_id, dag_run_id)
+            if run.get("state") in ("success", "failed"):
+                print(f"DAG run completed with state: {run.get('state')}")
+                return dag_id, dag_run_id
+            time.sleep(2)
+
+        pytest.skip(f"DAG run did not complete within {timeout_seconds} seconds")
 
     def test_get_task(self, adapter):
         """Should get details of a specific task definition."""
@@ -394,23 +434,11 @@ class TestTaskEndpoints:
         print(f"Got task {task_id} from DAG {dag_id}")
 
     def test_get_task_instances(self, adapter):
-        """Should list task instances for a DAG run."""
-        runs = adapter.list_dag_runs(dag_id=None, limit=20)
-        if not runs.get("dag_runs"):
-            pytest.skip("No DAG runs available to test")
+        """Should list task instances for a DAG run.
 
-        # Look for a completed run (success or failed)
-        target_run = None
-        for run in runs["dag_runs"]:
-            if run.get("state") in ("success", "failed"):
-                target_run = run
-                break
-
-        if not target_run:
-            pytest.skip("No completed DAG runs available to test task instances")
-
-        dag_id = target_run["dag_id"]
-        dag_run_id = target_run["dag_run_id"]
+        Triggers a DAG run and waits for completion before testing.
+        """
+        dag_id, dag_run_id = self._get_completed_dag_run(adapter)
 
         result = adapter.get_task_instances(dag_id, dag_run_id, limit=100)
 
@@ -419,32 +447,17 @@ class TestTaskEndpoints:
         print(f"Found {len(result['task_instances'])} task instances for run {dag_run_id}")
 
     def test_get_task_instance(self, adapter):
-        """Should get details of a specific task instance."""
-        runs = adapter.list_dag_runs(dag_id=None, limit=20)
-        if not runs.get("dag_runs"):
-            pytest.skip("No DAG runs available to test")
+        """Should get details of a specific task instance.
 
-        target_run = None
-        target_task_instance = None
+        Triggers a DAG run and waits for completion before testing.
+        """
+        dag_id, dag_run_id = self._get_completed_dag_run(adapter)
 
-        for run in runs["dag_runs"]:
-            if run.get("state") in ("success", "failed"):
-                dag_id = run["dag_id"]
-                dag_run_id = run["dag_run_id"]
+        instances = adapter.get_task_instances(dag_id, dag_run_id, limit=10)
+        if not instances.get("task_instances"):
+            pytest.skip("No task instances available")
 
-                instances = adapter.get_task_instances(dag_id, dag_run_id, limit=10)
-                if instances.get("task_instances"):
-                    target_run = run
-                    target_task_instance = instances["task_instances"][0]
-                    break
-
-        if not target_run or not target_task_instance:
-            pytest.skip("No completed task instances available to test")
-
-        dag_id = target_run["dag_id"]
-        dag_run_id = target_run["dag_run_id"]
-        task_id = target_task_instance["task_id"]
-
+        task_id = instances["task_instances"][0]["task_id"]
         result = adapter.get_task_instance(dag_id, dag_run_id, task_id)
 
         assert result.get("task_id") == task_id
@@ -455,36 +468,22 @@ class TestTaskEndpoints:
     def test_get_task_logs(self, adapter):
         """Should get logs for a task instance.
 
-        Note: Logs require a task that has actually executed (not just queued).
+        Triggers a DAG run and waits for completion. Logs require a task
+        that has actually executed (not just queued).
         """
-        runs = adapter.list_dag_runs(dag_id=None, limit=20)
-        if not runs.get("dag_runs"):
-            pytest.skip("No DAG runs available to test")
+        dag_id, dag_run_id = self._get_completed_dag_run(adapter)
 
+        instances = adapter.get_task_instances(dag_id, dag_run_id, limit=20)
         target_task = None
-        target_run = None
+        for ti in instances.get("task_instances", []):
+            # Look for a task that actually ran (has logs)
+            if ti.get("state") in ("success", "failed", "upstream_failed"):
+                target_task = ti
+                break
 
-        for run in runs["dag_runs"]:
-            if run.get("state") in ("success", "failed"):
-                dag_id = run["dag_id"]
-                dag_run_id = run["dag_run_id"]
-
-                instances = adapter.get_task_instances(dag_id, dag_run_id, limit=20)
-                for ti in instances.get("task_instances", []):
-                    # Look for a task that actually ran (has logs)
-                    if ti.get("state") in ("success", "failed", "upstream_failed"):
-                        target_task = ti
-                        target_run = run
-                        break
-
-                if target_task:
-                    break
-
-        if not target_task or not target_run:
+        if not target_task:
             pytest.skip("No executed task instances available to test logs")
 
-        dag_id = target_run["dag_id"]
-        dag_run_id = target_run["dag_run_id"]
         task_id = target_task["task_id"]
         try_number = target_task.get("try_number", 1)
 
