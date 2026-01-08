@@ -141,10 +141,19 @@ class AirflowV2Adapter(AirflowAdapter):
         return self._call(f"pools/{pool_name}")
 
     def get_dag_stats(self, dag_ids: list[str] | None = None) -> dict[str, Any]:
-        """Get DAG run statistics by state."""
-        params = {}
-        if dag_ids:
-            params["dag_ids"] = ",".join(dag_ids)
+        """Get DAG run statistics by state.
+
+        Note: Airflow 2.x requires dag_ids parameter. If not provided, we fetch all DAGs first.
+        """
+        if dag_ids is None:
+            # Airflow 2.x requires dag_ids, so fetch all DAGs first
+            dags_response = self.list_dags(limit=1000)
+            dag_ids = [dag["dag_id"] for dag in dags_response.get("dags", [])]
+
+            if not dag_ids:
+                return {"dags": [], "total_entries": 0}
+
+        params = {"dag_ids": ",".join(dag_ids)}
         return self._call("dagStats", params=params)
 
     def list_dag_warnings(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
