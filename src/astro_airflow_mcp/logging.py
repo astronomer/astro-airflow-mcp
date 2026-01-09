@@ -2,9 +2,11 @@
 
 import functools
 import logging
-import sys
 from collections.abc import Callable
 from typing import Any, TypeVar
+
+from rich.console import Console
+from rich.logging import RichHandler
 
 # Type variable for preserving function signatures in decorators
 F = TypeVar("F", bound=Callable[..., Any])
@@ -56,14 +58,20 @@ def configure_logging(level: str | int = logging.INFO, stdio_mode: bool = False)
     # Remove any existing handlers to avoid duplicates
     logger.handlers.clear()
 
-    # Create console handler - use stderr in stdio mode to avoid corrupting JSON-RPC
-    stream = sys.stderr if stdio_mode else sys.stdout
-    handler = logging.StreamHandler(stream)
+    # Use RichHandler for colored output matching FastMCP's style
+    # stderr=True in stdio mode to avoid corrupting JSON-RPC messages on stdout
+    console = Console(stderr=stdio_mode)
+    handler = RichHandler(
+        console=console,
+        show_time=False,
+        show_path=False,
+        show_level=False,
+        rich_tracebacks=False,
+        markup=True,
+    )
     handler.setLevel(level)
-
-    # Create simple formatter
-    formatter = logging.Formatter(fmt="%(levelname)s: %(message)s")
-    handler.setFormatter(formatter)
+    # Format with colored level and colon to match uvicorn/FastMCP style
+    handler.setFormatter(logging.Formatter("[green]%(levelname)s:[/green]     %(message)s"))
 
     # Add handler to logger
     logger.addHandler(handler)
@@ -101,9 +109,9 @@ def log_tool_call(func: F) -> F:
             arg_parts.extend(repr(arg) for arg in args)
         if kwargs:
             arg_parts.extend(f"{k}={v!r}" for k, v in kwargs.items())
-        args_str = ", ".join(arg_parts) if arg_parts else "(no arguments)"
+        args_str = f"({', '.join(arg_parts)})" if arg_parts else ""
 
-        logger.info(f"Tool call: {func.__name__}({args_str})")
+        logger.info(f"Tool call: {func.__name__}{args_str}")
         return func(*args, **kwargs)
 
     return wrapper  # type: ignore[return-value]
