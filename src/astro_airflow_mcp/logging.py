@@ -1,15 +1,7 @@
 """Logging utilities for Airflow MCP."""
 
-import functools
 import logging
-from collections.abc import Callable
-from typing import Any, TypeVar
-
-from rich.console import Console
-from rich.logging import RichHandler
-
-# Type variable for preserving function signatures in decorators
-F = TypeVar("F", bound=Callable[..., Any])
+import sys
 
 
 def get_logger(name: str | None = None) -> logging.Logger:
@@ -58,60 +50,17 @@ def configure_logging(level: str | int = logging.INFO, stdio_mode: bool = False)
     # Remove any existing handlers to avoid duplicates
     logger.handlers.clear()
 
-    # Use RichHandler for colored output matching FastMCP's style
-    # stderr=True in stdio mode to avoid corrupting JSON-RPC messages on stdout
-    console = Console(stderr=stdio_mode)
-    handler = RichHandler(
-        console=console,
-        show_time=False,
-        show_path=False,
-        show_level=False,
-        rich_tracebacks=False,
-        markup=True,
-    )
+    # Create console handler - use stderr in stdio mode to avoid corrupting JSON-RPC
+    stream = sys.stderr if stdio_mode else sys.stdout
+    handler = logging.StreamHandler(stream)
     handler.setLevel(level)
-    # Format with colored level and colon to match uvicorn/FastMCP style
-    handler.setFormatter(logging.Formatter("[green]%(levelname)s:[/green]     %(message)s"))
+
+    # Create simple formatter
+    formatter = logging.Formatter(fmt="%(levelname)s: %(message)s")
+    handler.setFormatter(formatter)
 
     # Add handler to logger
     logger.addHandler(handler)
 
     # Prevent propagation to root logger to avoid duplicate logs
     logger.propagate = False
-
-
-def log_tool_call(func: F) -> F:
-    """Decorator that logs MCP tool calls with their arguments.
-
-    Logs the tool name and arguments at INFO level when a tool is invoked.
-    Uses the module's logger for the decorated function.
-
-    Args:
-        func: The tool function to wrap
-
-    Returns:
-        Wrapped function that logs before executing
-
-    Example:
-        >>> @mcp.tool()
-        >>> @log_tool_call
-        >>> def get_dag_details(dag_id: str) -> str:
-        ...     return _get_dag_details_impl(dag_id)
-    """
-    # Get logger based on the function's module
-    logger = get_logger(func.__module__)
-
-    @functools.wraps(func)
-    def wrapper(*args: Any, **kwargs: Any) -> Any:
-        # Format arguments for logging
-        arg_parts: list[str] = []
-        if args:
-            arg_parts.extend(repr(arg) for arg in args)
-        if kwargs:
-            arg_parts.extend(f"{k}={v!r}" for k, v in kwargs.items())
-        args_str = f"({', '.join(arg_parts)})" if arg_parts else ""
-
-        logger.info(f"Tool call: {func.__name__}{args_str}")
-        return func(*args, **kwargs)
-
-    return wrapper  # type: ignore[return-value]

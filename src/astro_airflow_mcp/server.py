@@ -6,9 +6,10 @@ from typing import Any
 
 import requests
 from fastmcp import FastMCP
+from fastmcp.server.middleware.logging import LoggingMiddleware
 
 from astro_airflow_mcp.adapters import AirflowAdapter, create_adapter
-from astro_airflow_mcp.logging import get_logger, log_tool_call
+from astro_airflow_mcp.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -193,6 +194,9 @@ mcp = FastMCP(
     Airflow instance.
     """,
 )
+
+# Add logging middleware to log all MCP tool calls
+mcp.add_middleware(LoggingMiddleware(include_payloads=True))
 
 
 # Global configuration for Airflow API access
@@ -463,7 +467,6 @@ def _get_dag_details_impl(dag_id: str) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def get_dag_details(dag_id: str) -> str:
     """Get detailed information about a specific Apache Airflow DAG.
 
@@ -527,7 +530,6 @@ def _list_dags_impl(
 
 
 @mcp.tool()
-@log_tool_call
 def list_dags() -> str:
     """Get information about all Apache Airflow DAGs (Directed Acyclic Graphs).
 
@@ -572,7 +574,6 @@ def _get_dag_source_impl(dag_id: str) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def get_dag_source(dag_id: str) -> str:
     """Get the source code for a specific Apache Airflow DAG.
 
@@ -613,7 +614,6 @@ def _get_dag_stats_impl(dag_ids: list[str] | None = None) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def get_dag_stats(dag_ids: list[str] | None = None) -> str:
     """Get statistics about DAG runs (success/failure counts by state).
 
@@ -691,7 +691,6 @@ def _list_import_errors_impl(
 
 
 @mcp.tool()
-@log_tool_call
 def list_dag_warnings() -> str:
     """Get warnings and issues detected in DAG definitions.
 
@@ -714,7 +713,6 @@ def list_dag_warnings() -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def list_import_errors() -> str:
     """Get import errors from DAG files that failed to parse or load.
 
@@ -838,7 +836,6 @@ def _get_task_logs_impl(
 
 
 @mcp.tool()
-@log_tool_call
 def get_task(dag_id: str, task_id: str) -> str:
     """Get detailed information about a specific task definition in a DAG.
 
@@ -877,7 +874,6 @@ def get_task(dag_id: str, task_id: str) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def list_tasks(dag_id: str) -> str:
     """Get all tasks defined in a specific DAG.
 
@@ -910,7 +906,6 @@ def list_tasks(dag_id: str) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def get_task_instance(dag_id: str, dag_run_id: str, task_id: str) -> str:
     """Get detailed information about a specific task instance execution.
 
@@ -944,7 +939,6 @@ def get_task_instance(dag_id: str, dag_run_id: str, task_id: str) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def get_task_logs(
     dag_id: str,
     dag_run_id: str,
@@ -1018,7 +1012,6 @@ def _list_dag_runs_impl(
 
 
 @mcp.tool()
-@log_tool_call
 def list_dag_runs() -> str:
     """Get execution history and status of DAG runs (workflow executions).
 
@@ -1068,7 +1061,6 @@ def _get_dag_run_impl(
 
 
 @mcp.tool()
-@log_tool_call
 def get_dag_run(dag_id: str, dag_run_id: str) -> str:
     """Get detailed information about a specific DAG run execution.
 
@@ -1266,7 +1258,6 @@ def _trigger_dag_and_wait_impl(
 
 
 @mcp.tool()
-@log_tool_call
 def trigger_dag(dag_id: str, conf: dict | None = None) -> str:
     """Trigger a new DAG run (start a workflow execution manually).
 
@@ -1309,7 +1300,6 @@ def trigger_dag(dag_id: str, conf: dict | None = None) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def trigger_dag_and_wait(
     dag_id: str,
     conf: dict | None = None,
@@ -1391,7 +1381,6 @@ def _list_assets_impl(
 
 
 @mcp.tool()
-@log_tool_call
 def list_assets() -> str:
     """Get data assets and datasets tracked by Airflow (data lineage).
 
@@ -1475,7 +1464,6 @@ def _list_connections_impl(
 
 
 @mcp.tool()
-@log_tool_call
 def list_connections() -> str:
     """Get connection configurations for external systems (databases, APIs, services).
 
@@ -1673,7 +1661,6 @@ def _list_providers_impl() -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def get_pool(pool_name: str) -> str:
     """Get detailed information about a specific resource pool.
 
@@ -1705,7 +1692,6 @@ def get_pool(pool_name: str) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def list_pools() -> str:
     """Get resource pools for managing task concurrency and resource allocation.
 
@@ -1736,7 +1722,6 @@ def list_pools() -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def list_plugins() -> str:
     """Get information about installed Airflow plugins.
 
@@ -1766,7 +1751,6 @@ def list_plugins() -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def list_providers() -> str:
     """Get information about installed Airflow provider packages.
 
@@ -1789,7 +1773,6 @@ def list_providers() -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def get_variable(variable_key: str) -> str:
     """Get a specific Airflow variable by key.
 
@@ -1817,7 +1800,6 @@ def get_variable(variable_key: str) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def list_variables() -> str:
     """Get all Airflow variables (key-value configuration pairs).
 
@@ -1847,7 +1829,6 @@ def list_variables() -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def get_airflow_version() -> str:
     """Get version information for the Airflow instance.
 
@@ -1874,7 +1855,6 @@ def get_airflow_version() -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def get_airflow_config() -> str:
     """Get Airflow instance configuration and settings.
 
@@ -1912,7 +1892,6 @@ def get_airflow_config() -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def explore_dag(dag_id: str) -> str:
     """Comprehensive investigation of a DAG - get all relevant info in one call.
 
@@ -1962,7 +1941,6 @@ def explore_dag(dag_id: str) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def diagnose_dag_run(dag_id: str, dag_run_id: str) -> str:
     """Diagnose issues with a specific DAG run - get run details and failed tasks.
 
@@ -2032,7 +2010,6 @@ def diagnose_dag_run(dag_id: str, dag_run_id: str) -> str:
 
 
 @mcp.tool()
-@log_tool_call
 def get_system_health() -> str:
     """Get overall Airflow system health - import errors, warnings, and DAG stats.
 
