@@ -148,6 +148,7 @@ claude mcp add airflow -e AIRFLOW_API_URL=https://your-airflow.example.com -e AI
   - Username/password with automatic OAuth2 token exchange (Airflow 3.x)
   - Basic auth (Airflow 2.x)
 
+
 ## Available Tools
 
 ### Consolidated Tools (Agent-Optimized)
@@ -231,13 +232,13 @@ echo astro-airflow-mcp >> requirements.txt
 
 | Flag | Environment Variable | Default | Description |
 |------|---------------------|---------|-------------|
-| `--transport` | `MCP_TRANSPORT` | `http` | Transport mode: `http` or `stdio` |
-| `--host` | `MCP_HOST` | `localhost` | Host to bind (HTTP mode) |
-| `--port` | `MCP_PORT` | `8000` | Port to bind (HTTP mode) |
+| `--transport` | `MCP_TRANSPORT` | `stdio` | Transport mode (`stdio` or `http`) |
+| `--host` | `MCP_HOST` | `localhost` | Host to bind to (HTTP mode only) |
+| `--port` | `MCP_PORT` | `8000` | Port to bind to (HTTP mode only) |
 | `--airflow-url` | `AIRFLOW_API_URL` | `http://localhost:8080` | Airflow webserver URL |
-| `--auth-token` | `AIRFLOW_AUTH_TOKEN` | - | Bearer token |
-| `--username` | `AIRFLOW_USERNAME` | - | Username |
-| `--password` | `AIRFLOW_PASSWORD` | - | Password |
+| `--auth-token` | `AIRFLOW_AUTH_TOKEN` | `None` | Bearer token for authentication |
+| `--username` | `AIRFLOW_USERNAME` | `None` | Username for authentication (Airflow 3.x uses OAuth2 token exchange) |
+| `--password` | `AIRFLOW_PASSWORD` | `None` | Password for authentication |
 
 ## Architecture
 

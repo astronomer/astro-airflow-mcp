@@ -24,17 +24,17 @@ install-hooks:  ## Install prek hooks
 	prek install
 	@echo "✓ prek hooks installed"
 
-run:  ## Run the MCP server (defaults: http mode, localhost:8000, airflow at localhost:8080)
-	uv run python -m astro_airflow_mcp
+run:  ## Run the MCP server in HTTP mode (default is stdio, but HTTP can be useful for local testing)
+	uv run python -m astro_airflow_mcp --transport http
 
 docker-build:  ## Build Docker image
 	docker build -t astro-airflow-mcp .
 
-docker-run:  ## Run Docker container (http mode with 0.0.0.0 binding for container access)
+docker-run:  ## Run Docker container
 	docker run -p 8000:8000 \
 		-e AIRFLOW_API_URL=http://host.docker.internal:8080 \
 		astro-airflow-mcp \
-		python -m astro_airflow_mcp --host 0.0.0.0
+		python -m astro_airflow_mcp --transport http
 
 build:  ## Build distribution packages (wheel and sdist)
 	uv build
