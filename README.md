@@ -199,7 +199,6 @@ Configure in Cursor's MCP settings:
 | `list_providers` | Get installed provider packages |
 | `get_airflow_config` | Get Airflow configuration |
 | `get_airflow_version` | Get Airflow version information |
-| `get_health` | Get Airflow health status |
 
 ### MCP Resources
 

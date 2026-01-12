@@ -47,13 +47,17 @@ test-integration:  ## Run integration tests against a running Airflow instance
 
 test-integration-v2:  ## Start Airflow 2.x and run integration tests
 	docker compose -f docker-compose.test.yml --profile airflow2 up -d --wait
-	./scripts/run-integration-tests.sh http://localhost:8080 admin admin || true
-	docker compose -f docker-compose.test.yml --profile airflow2 down
+	./scripts/run-integration-tests.sh http://localhost:8080 admin admin; \
+	EXIT_CODE=$$?; \
+	docker compose -f docker-compose.test.yml --profile airflow2 down; \
+	exit $$EXIT_CODE
 
 test-integration-v3:  ## Start Airflow 3.x and run integration tests
 	docker compose -f docker-compose.test.yml --profile airflow3 up -d --wait
-	./scripts/run-integration-tests.sh http://localhost:8081 admin admin || true
-	docker compose -f docker-compose.test.yml --profile airflow3 down
+	./scripts/run-integration-tests.sh http://localhost:8081 admin admin; \
+	EXIT_CODE=$$?; \
+	docker compose -f docker-compose.test.yml --profile airflow3 down; \
+	exit $$EXIT_CODE
 
 test-all:  ## Run unit tests + integration tests against both Airflow versions
 	$(MAKE) test
