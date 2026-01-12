@@ -33,9 +33,6 @@ fallback-version = "0.0.0+dev"
 [tool.hatchling.build.targets.wheel]
 packages = ["src/astro_airflow_mcp"]
 
-[tool.hatchling.build.targets.wheel.force-include]
-"src/astro_airflow_mcp/templates" = "astro_airflow_mcp/templates"
-
 [dependency-groups]
 dev = [
     "pytest>=7.0.0",

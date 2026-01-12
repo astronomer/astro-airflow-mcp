@@ -1,4 +1,14 @@
-"""Pydantic models for Airflow API responses."""
+"""Pydantic models for Airflow API responses.
+
+These models serve as type references and documentation for the expected
+API response structures. The adapters currently return raw dict[str, Any]
+for flexibility, but these models document the expected fields and types.
+
+They can be used for:
+- Type hints and IDE autocompletion during development
+- Documentation of API response structures
+- Future validation if stricter typing is desired
+"""
 
 from datetime import datetime
 from typing import Any
