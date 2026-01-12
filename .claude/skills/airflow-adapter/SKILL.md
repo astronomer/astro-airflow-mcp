@@ -1,46 +1,37 @@
 ---
-description: How to work with the Airflow adapter pattern for v2/v3 compatibility
-triggers:
-  - adapter
-  - airflow api
-  - v2 vs v3
-  - version compatibility
-  - add endpoint
+description: Airflow adapter pattern for v2/v3 API compatibility
+globs:
+  - src/astro_airflow_mcp/adapters/**
+  - src/astro_airflow_mcp/server.py
 ---
 
 # Airflow Adapter Pattern
 
-This skill covers how to work with the adapter pattern that enables compatibility with both Airflow 2.x and 3.x.
+Enables compatibility with both Airflow 2.x (`/api/v1`) and 3.x (`/api/v2`).
 
-## Overview
-
-The adapter pattern abstracts Airflow API differences:
+## Architecture
 
 ```
 MCP Tool → _get_adapter() → AirflowV2Adapter or AirflowV3Adapter → Airflow API
 ```
 
-Version is auto-detected at startup by probing `/api/v2/version` then `/api/v1/version`.
+Version is auto-detected at startup.
 
 ## Key Files
 
-- `adapters/base.py` - Abstract interface all adapters implement
-- `adapters/airflow_v2.py` - Airflow 2.x implementation (`/api/v1`)
-- `adapters/airflow_v3.py` - Airflow 3.x implementation (`/api/v2`)
+- `adapters/base.py` - Abstract interface
+- `adapters/airflow_v2.py` - Airflow 2.x (`/api/v1`)
+- `adapters/airflow_v3.py` - Airflow 3.x (`/api/v2`)
 
-## Adding New Endpoints
+## Related Files
 
-See [api-differences.md](api-differences.md) for version differences.
-See [patterns.md](patterns.md) for implementation patterns.
+- @api-differences.md - V2 vs V3 field/endpoint differences
+- @patterns.md - Implementation patterns
 
 ## Quick Reference
 
 ```python
-# Get adapter (auto-detects version)
 adapter = _get_adapter()
-
-# Make API calls through adapter
 dags = adapter.list_dags(limit=100)
-dag = adapter.get_dag("my_dag")
 run = adapter.trigger_dag_run("my_dag", conf={"key": "value"})
 ```
