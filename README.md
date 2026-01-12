@@ -5,7 +5,122 @@
 [![PyPI - Version](https://img.shields.io/pypi/v/astro-airflow-mcp.svg?color=blue)](https://pypi.org/project/astro-airflow-mcp)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://github.com/astronomer/astro-airflow-mcp/blob/main/LICENSE)
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Apache Airflow that provides AI assistants (like Claude, Cursor, etc.) with access to Airflow's REST API. Built with [FastMCP](https://github.com/jlowin/fastmcp).
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Apache Airflow that provides AI assistants with access to Airflow's REST API. Built with [FastMCP](https://github.com/jlowin/fastmcp).
+
+## Quickstart
+
+### IDEs
+
+[<img src="https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white" alt="Install in VS Code" height="32">](https://insiders.vscode.dev/redirect?url=vscode://ms-vscode.vscode-mcp/install?%7B%22name%22%3A%22astro-airflow-mcp%22%2C%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22astro-airflow-mcp%22%2C%22--transport%22%2C%22stdio%22%5D%7D)
+[<img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Add to Cursor" height="32">](cursor://anysphere.cursor-deeplink/mcp/install?name=astro-airflow-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJhc3Ryby1haXJmbG93LW1jcCIsIi0tdHJhbnNwb3J0Iiwic3RkaW8iXX0)
+
+<details>
+<summary>Manual configuration</summary>
+
+Add to your MCP settings (Cursor: `~/.cursor/mcp.json`, VS Code: `.vscode/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "airflow": {
+      "command": "uvx",
+      "args": ["astro-airflow-mcp", "--transport", "stdio"]
+    }
+  }
+}
+```
+
+</details>
+
+### CLI Tools
+
+<details>
+<summary>Claude Code</summary>
+
+```bash
+claude mcp add airflow -- uvx astro-airflow-mcp --transport stdio
+```
+
+</details>
+
+<details>
+<summary>Gemini CLI</summary>
+
+```bash
+gemini mcp add airflow -- uvx astro-airflow-mcp --transport stdio
+```
+
+</details>
+
+<details>
+<summary>Codex CLI</summary>
+
+```bash
+codex mcp add airflow -- uvx astro-airflow-mcp --transport stdio
+```
+
+</details>
+
+### Desktop Apps
+
+<details>
+<summary>Claude Desktop</summary>
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "airflow": {
+      "command": "uvx",
+      "args": ["astro-airflow-mcp", "--transport", "stdio"]
+    }
+  }
+}
+```
+
+</details>
+
+### Other MCP Clients
+
+<details>
+<summary>Manual JSON Configuration</summary>
+
+Add to your MCP configuration file:
+
+```json
+{
+  "mcpServers": {
+    "airflow": {
+      "command": "uvx",
+      "args": ["astro-airflow-mcp", "--transport", "stdio"]
+    }
+  }
+}
+```
+
+Or connect to a running HTTP server: `"url": "http://localhost:8000/mcp"`
+
+</details>
+
+> **Note:** No installation required - `uvx` runs directly from PyPI. The `--transport stdio` flag is required because the server defaults to HTTP mode.
+
+### Configuration
+
+By default, the server connects to `http://localhost:8080` (Astro CLI default). Set environment variables for custom Airflow instances:
+
+| Variable | Description |
+|----------|-------------|
+| `AIRFLOW_API_URL` | Airflow webserver URL |
+| `AIRFLOW_USERNAME` | Username (Airflow 3.x uses OAuth2 token exchange) |
+| `AIRFLOW_PASSWORD` | Password |
+| `AIRFLOW_AUTH_TOKEN` | Bearer token (alternative to username/password) |
+
+Example with auth (Claude Code):
+
+```bash
+claude mcp add airflow -e AIRFLOW_API_URL=https://your-airflow.example.com -e AIRFLOW_USERNAME=admin -e AIRFLOW_PASSWORD=admin -- uvx astro-airflow-mcp --transport stdio
+```
 
 ## Features
 
@@ -33,145 +148,6 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for Ap
   - Username/password with automatic OAuth2 token exchange (Airflow 3.x)
   - Basic auth (Airflow 2.x)
 
-
-## Installation
-
-We recommend installing astro-airflow-mcp with [uv](https://docs.astral.sh/uv/):
-
-```bash
-uv pip install astro-airflow-mcp
-```
-
-If installing into an Astro project as an Airflow plugin, add the package to your `requirements.txt`:
-
-```bash
-echo astro-airflow-mcp >> requirements.txt
-```
-
-## Usage
-
-### Running the Server
-
-After installation, start the MCP server:
-
-```bash
-astro-airflow-mcp
-```
-
-By default, this will:
-- Run in **stdio mode** for use with MCP clients like Claude Desktop and Cursor
-- Connect to Airflow at `http://localhost:8080` (default for `astro dev start`)
-
-The server provides a set of tools that AI assistants can use to interact with your Airflow instance through the REST API. No authentication is required by default, but you can configure it using environment variables or command-line flags (see [Configuration](#configuration)).
-
-**Stdio mode (default)** - For MCP clients:
-
-```bash
-# Default - runs in stdio mode
-astro-airflow-mcp
-
-# Airflow 3.x with username/password (OAuth2 token exchange)
-astro-airflow-mcp --airflow-url https://my-airflow.example.com --username admin --password admin
-
-# Airflow 2.x or 3.x with bearer token
-astro-airflow-mcp --airflow-url https://my-airflow.example.com --auth-token my_token
-```
-
-**HTTP mode** - For standalone server:
-
-```bash
-# Run as HTTP server on localhost:8000
-astro-airflow-mcp --transport http
-
-# Customize host and port
-astro-airflow-mcp --transport http --host 0.0.0.0 --port 9000
-```
-
-The HTTP mode exposes MCP protocol endpoints at `http://localhost:8000/mcp` and is useful for:
-- Testing with HTTP-based MCP clients
-- Running as a standalone service
-- Docker deployments (see `make docker-run`)
-
-### Using with MCP Clients
-
-#### Claude Desktop
-
-Claude Desktop uses stdio mode by default. Add to your Claude Desktop configuration:
-
-```json
-{
-  "mcpServers": {
-    "airflow": {
-      "command": "astro-airflow-mcp",
-      "env": {
-        "AIRFLOW_API_URL": "http://your.airflow.domain.com",
-        "AIRFLOW_USERNAME": "admin",
-        "AIRFLOW_PASSWORD": "admin"
-      }
-    }
-  }
-}
-```
-
-Or with a bearer token:
-
-```json
-{
-  "mcpServers": {
-    "airflow": {
-      "command": "astro-airflow-mcp",
-      "env": {
-        "AIRFLOW_API_URL": "http://your.airflow.domain.com",
-        "AIRFLOW_AUTH_TOKEN": "your_token"
-      }
-    }
-  }
-}
-```
-
-#### Cursor
-
-Configure in Cursor's MCP settings:
-
-**Stdio mode (default)**:
-
-```json
-{
-  "mcpServers": {
-    "airflow": {
-      "command": "astro-airflow-mcp",
-      "args": [],
-      "env": {
-        "AIRFLOW_API_URL": "http://localhost:8080"
-      }
-    }
-  }
-}
-```
-
-**Or connect to a standalone HTTP server**:
-
-```json
-{
-  "mcpServers": {
-    "airflow": {
-      "url": "http://localhost:8000/mcp"
-    }
-  }
-}
-```
-
-**Or connect to the Airflow plugin endpoint**:
-
-```json
-{
-  "mcpServers": {
-    "airflow": {
-      "url": "http://localhost:8080/mcp/v1"
-    }
-  }
-}
-```
 
 ## Available Tools
 
@@ -212,7 +188,6 @@ Configure in Cursor's MCP settings:
 | `list_providers` | Get installed provider packages |
 | `get_airflow_config` | Get Airflow configuration |
 | `get_airflow_version` | Get Airflow version information |
-| `get_health` | Get Airflow health status |
 
 ### MCP Resources
 
@@ -231,42 +206,29 @@ Configure in Cursor's MCP settings:
 | `daily_health_check` | Morning health check routine |
 | `onboard_new_dag` | Guide for understanding a new DAG |
 
-## Development
+## Advanced Usage
 
-### Quick Start
+### Running as Standalone Server
 
-```bash
-# Setup development environment
-make setup
-
-# Run tests
-make test
-
-# Run all checks
-make check
-
-# Run pre-commit hooks
-make pre-commit
-```
-
-### Local Testing with Astro CLI
-
-The easiest way to test the MCP server locally is with [Astro CLI](https://www.astronomer.io/docs/astro/cli/overview):
+For HTTP-based integrations or connecting multiple clients to one server:
 
 ```bash
-# Start a local Airflow instance with an astro project (optional but recommended)
-astro dev start
-
-# In another terminal, run the MCP server in HTTP mode for testing
-# This uses HTTP mode explicitly for easier testing and debugging
-make run
+# Run server (HTTP mode is default)
+uvx astro-airflow-mcp --airflow-url https://my-airflow.example.com --username admin --password admin
 ```
 
-The `make run` command uses HTTP mode on `http://localhost:8000` which is useful for local testing. The default configuration connects to `http://localhost:8080` which matches Astro CLI's default Airflow webserver URL.
+Connect MCP clients to: `http://localhost:8000/mcp`
 
-## Configuration
+### Airflow Plugin Mode
 
-All tools use a global configuration that can be set via command-line flags or environment variables:
+Install into your Airflow 3.x environment to expose MCP at `http://your-airflow:8080/mcp/v1`:
+
+```bash
+# Add to your Astro project
+echo astro-airflow-mcp >> requirements.txt
+```
+
+### CLI Options
 
 | Flag | Environment Variable | Default | Description |
 |------|---------------------|---------|-------------|
@@ -302,9 +264,26 @@ The server is built using [FastMCP](https://github.com/jlowin/fastmcp) with an a
 - **Standalone**: Independent ASGI application with HTTP/SSE transport
 - **Plugin**: Mounted into Airflow 3.x FastAPI webserver
 
+## Development
+
+```bash
+# Setup development environment
+make install-dev
+
+# Run tests
+make test
+
+# Run all checks
+make check
+
+# Local testing with Astro CLI
+astro dev start  # Start Airflow
+make run         # Run MCP server (connects to localhost:8080)
+```
+
 ## Contributing
 
 Contributions welcome! Please ensure:
 - All tests pass (`make test`)
 - Code passes linting (`make check`)
-- Pre-commit hooks pass (`make pre-commit`)
+- prek hooks pass (`make prek`)

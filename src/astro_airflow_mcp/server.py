@@ -4,7 +4,7 @@ import json
 import time
 from typing import Any
 
-import requests
+import httpx
 from fastmcp import FastMCP
 from fastmcp.server.middleware.logging import LoggingMiddleware
 
@@ -115,19 +115,19 @@ class AirflowTokenManager:
         token_url = f"{self.airflow_url}/auth/token"
 
         try:
-            if self.username and self.password:
-                # Use credentials to fetch token
-                logger.debug("Fetching token with username/password credentials")
-                response = requests.post(
-                    token_url,
-                    json={"username": self.username, "password": self.password},
-                    headers={"Content-Type": "application/json"},
-                    timeout=30,
-                )
-            else:
-                # Try credential-less fetch (for all_admins mode)
-                logger.debug("Attempting credential-less token fetch")
-                response = requests.get(token_url, timeout=30)
+            with httpx.Client(timeout=30.0) as client:
+                if self.username and self.password:
+                    # Use credentials to fetch token
+                    logger.debug("Fetching token with username/password credentials")
+                    response = client.post(
+                        token_url,
+                        json={"username": self.username, "password": self.password},
+                        headers={"Content-Type": "application/json"},
+                    )
+                else:
+                    # Try credential-less fetch (for all_admins mode)
+                    logger.debug("Attempting credential-less token fetch")
+                    response = client.get(token_url)
 
             # Check for 404 - indicates Airflow 2.x without token endpoint
             if response.status_code == 404:
@@ -162,11 +162,11 @@ class AirflowTokenManager:
                     self._token_lifetime_seconds = float(data["expires_in"])
                 logger.info("Successfully fetched Airflow API token")
             else:
-                logger.warning(f"Unexpected token response format: {data}")
+                logger.warning("Unexpected token response format: %s", data)
                 self._token = None
 
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Failed to fetch token from {token_url}: {e}")
+        except httpx.RequestError as e:
+            logger.warning("Failed to fetch token from %s: %s", token_url, e)
             self._token = None
 
     def invalidate(self) -> None:
@@ -226,13 +226,13 @@ def _get_adapter() -> AirflowAdapter:
     """
     global _adapter
     if _adapter is None:
-        logger.info(f"Initializing adapter for {_config.url}")
+        logger.info("Initializing adapter for %s", _config.url)
         _adapter = create_adapter(
             airflow_url=_config.url,
             token_getter=_get_auth_token,
             basic_auth_getter=_get_basic_auth,
         )
-        logger.info(f"Created adapter for Airflow {_adapter.version}")
+        logger.info("Created adapter for Airflow %s", _adapter.version)
     return _adapter
 
 
@@ -321,113 +321,7 @@ def _invalidate_token() -> None:
         _config.token_manager.invalidate()
 
 
-# Helper functions for API calls and response formatting
-def _call_airflow_api(
-    endpoint: str,
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    params: dict[str, Any] | None = None,
-    auth_token: str | None = None,
-    _retry: bool = True,
-) -> dict[str, Any]:
-    """Call Airflow REST API with error handling and optional authentication.
-
-    Args:
-        endpoint: API endpoint path (e.g., 'dags', 'dagRuns')
-        airflow_url: Base URL of the Airflow webserver
-        params: Optional query parameters
-        auth_token: Optional Bearer token for token-based authentication
-        _retry: Internal flag to control retry on auth failure (default True)
-
-    Returns:
-        Parsed JSON response from the API
-
-    Raises:
-        Exception: If the API call fails with error details
-
-    Note:
-        If auth_token is provided, Bearer token authentication is used.
-        If not provided, the global token (from token manager or config) is used.
-        On 401/403 errors, the token is invalidated and the request is retried once.
-    """
-    try:
-        api_url = f"{airflow_url}/api/v2/{endpoint}"
-        headers: dict[str, str] = {}
-
-        # Handle authentication - use provided token or get from global config
-        token = auth_token if auth_token else _get_auth_token()
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-
-        response = requests.get(api_url, params=params, headers=headers, timeout=30)
-
-        # Handle auth errors with retry
-        if response.status_code in (401, 403) and _retry and not auth_token:
-            logger.debug(f"Auth error ({response.status_code}), invalidating token and retrying")
-            _invalidate_token()
-            return _call_airflow_api(endpoint, airflow_url, params, auth_token=None, _retry=False)
-
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"Error connecting to Airflow API: {str(e)}") from e
-    except Exception as e:
-        raise Exception(f"Error calling API endpoint '{endpoint}': {str(e)}") from e
-
-
-def _post_airflow_api(
-    endpoint: str,
-    airflow_url: str = DEFAULT_AIRFLOW_URL,
-    json_data: dict[str, Any] | None = None,
-    auth_token: str | None = None,
-    _retry: bool = True,
-) -> dict[str, Any]:
-    """Call Airflow REST API with POST method.
-
-    Args:
-        endpoint: API endpoint path (e.g., 'dags/{dag_id}/dagRuns')
-        airflow_url: Base URL of the Airflow webserver
-        json_data: Optional JSON body to send with the request
-        auth_token: Optional Bearer token for token-based authentication
-        _retry: Internal flag to control retry on auth failure (default True)
-
-    Returns:
-        Parsed JSON response from the API
-
-    Raises:
-        Exception: If the API call fails with error details
-
-    Note:
-        If auth_token is provided, Bearer token authentication is used.
-        If not provided, the global token (from token manager or config) is used.
-        On 401/403 errors, the token is invalidated and the request is retried once.
-    """
-    try:
-        api_url = f"{airflow_url}/api/v2/{endpoint}"
-        headers: dict[str, str] = {"Content-Type": "application/json"}
-
-        # Handle authentication - use provided token or get from global config
-        token = auth_token if auth_token else _get_auth_token()
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-
-        response = requests.post(api_url, json=json_data, headers=headers, timeout=30)
-
-        # Handle auth errors with retry
-        if response.status_code in (401, 403) and _retry and not auth_token:
-            logger.debug(f"Auth error ({response.status_code}), invalidating token and retrying")
-            _invalidate_token()
-            return _post_airflow_api(
-                endpoint, airflow_url, json_data, auth_token=None, _retry=False
-            )
-
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        raise Exception(f"Error connecting to Airflow API: {str(e)}") from e
-    except Exception as e:
-        raise Exception(f"Error calling API endpoint '{endpoint}': {str(e)}") from e
-
-
+# Helper functions for response formatting
 def _wrap_list_response(items: list[dict[str, Any]], key_name: str, data: dict[str, Any]) -> str:
     """Wrap API list response with pagination metadata.
 
@@ -523,8 +417,7 @@ def _list_dags_impl(
 
         if "dags" in data:
             return _wrap_list_response(data["dags"], "dags", data)
-        else:
-            return f"No DAGs found. Response: {data}"
+        return f"No DAGs found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -659,8 +552,7 @@ def _list_dag_warnings_impl(
 
         if "dag_warnings" in data:
             return _wrap_list_response(data["dag_warnings"], "dag_warnings", data)
-        else:
-            return f"No DAG warnings found. Response: {data}"
+        return f"No DAG warnings found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -684,8 +576,7 @@ def _list_import_errors_impl(
 
         if "import_errors" in data:
             return _wrap_list_response(data["import_errors"], "import_errors", data)
-        else:
-            return f"No import errors found. Response: {data}"
+        return f"No import errors found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -776,8 +667,7 @@ def _list_tasks_impl(dag_id: str) -> str:
 
         if "tasks" in data:
             return _wrap_list_response(data["tasks"], "tasks", data)
-        else:
-            return f"No tasks found. Response: {data}"
+        return f"No tasks found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -1005,8 +895,7 @@ def _list_dag_runs_impl(
 
         if "dag_runs" in data:
             return _wrap_list_response(data["dag_runs"], "dag_runs", data)
-        else:
-            return f"No DAG runs found. Response: {data}"
+        return f"No DAG runs found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -1169,7 +1058,7 @@ def _trigger_dag_and_wait_impl(
         dag_id: The ID of the DAG to trigger
         conf: Optional configuration dictionary to pass to the DAG run
         poll_interval: Seconds between status checks (default: 5.0)
-        timeout: Maximum time to wait in seconds (default: 1800.0 / 30 minutes)
+        timeout: Maximum time to wait in seconds (default: 3600.0 / 60 minutes)
 
     Returns:
         JSON string containing the final DAG run status and any failed task details
@@ -1323,7 +1212,7 @@ def trigger_dag_and_wait(
     DAGs, consider using `trigger_dag` instead and checking status separately with
     `get_dag_run`.
 
-    Default timeout is 30 minutes. Adjust the `timeout` parameter for longer DAGs.
+    Default timeout is 60 minutes. Adjust the `timeout` parameter for longer DAGs.
 
     Returns information about the completed DAG run including:
     - dag_id: Which DAG was run
@@ -1339,7 +1228,7 @@ def trigger_dag_and_wait(
         dag_id: The ID of the DAG to trigger (e.g., "example_dag")
         conf: Optional configuration dictionary to pass to the DAG run.
               This will be available in the DAG via context['dag_run'].conf
-        timeout: Maximum time to wait in seconds (default: 1800.0 / 30 minutes)
+        timeout: Maximum time to wait in seconds (default: 3600.0 / 60 minutes)
 
     Returns:
         JSON with final DAG run status and any failed task details
@@ -1461,8 +1350,7 @@ def _list_assets_impl(
 
         if "assets" in data:
             return _wrap_list_response(data["assets"], "assets", data)
-        else:
-            return f"No assets found. Response: {data}"
+        return f"No assets found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -1544,8 +1432,7 @@ def _list_connections_impl(
             }
 
             return json.dumps(result, indent=2)
-        else:
-            return f"No connections found. Response: {data}"
+        return f"No connections found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -1620,8 +1507,7 @@ def _list_variables_impl(
 
         if "variables" in data:
             return _wrap_list_response(data["variables"], "variables", data)
-        else:
-            return f"No variables found. Response: {data}"
+        return f"No variables found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -1654,8 +1540,7 @@ def _get_config_impl() -> str:
             # Add summary metadata and pass through sections
             result = {"total_sections": len(data["sections"]), "sections": data["sections"]}
             return json.dumps(result, indent=2)
-        else:
-            return f"No configuration found. Response: {data}"
+        return f"No configuration found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -1698,8 +1583,7 @@ def _list_pools_impl(
 
         if "pools" in data:
             return _wrap_list_response(data["pools"], "pools", data)
-        else:
-            return f"No pools found. Response: {data}"
+        return f"No pools found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -1723,8 +1607,7 @@ def _list_plugins_impl(
 
         if "plugins" in data:
             return _wrap_list_response(data["plugins"], "plugins", data)
-        else:
-            return f"No plugins found. Response: {data}"
+        return f"No plugins found. Response: {data}"
     except Exception as e:
         return str(e)
 
@@ -1741,8 +1624,7 @@ def _list_providers_impl() -> str:
 
         if "providers" in data:
             return _wrap_list_response(data["providers"], "providers", data)
-        else:
-            return f"No providers found. Response: {data}"
+        return f"No providers found. Response: {data}"
     except Exception as e:
         return str(e)
 

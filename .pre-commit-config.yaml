@@ -1,7 +1,7 @@
-# Pre-commit hooks for airflow-mcp
-# See https://pre-commit.com for more information
-# To install: pip install pre-commit && pre-commit install
-# To run manually: pre-commit run --all-files
+# prek hooks for airflow-mcp
+# See https://github.com/j178/prek for more information
+# To install: uv tool install prek && prek install
+# To run manually: prek run --all-files
 
 repos:
   # General file checks
@@ -25,7 +25,7 @@ repos:
     rev: v0.14.7
     hooks:
       # Run the linter
-      - id: ruff
+      - id: ruff-check
         args: [--fix, --exit-non-zero-on-fix]
       # Run the formatter
       - id: ruff-format
