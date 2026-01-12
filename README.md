@@ -59,33 +59,44 @@ astro-airflow-mcp
 ```
 
 By default, this will:
-- Start an HTTP server on `localhost:8000`
-- Connect to Airflow at `http://localhost:8080` (`astro dev start`)
-- Expose MCP protocol endpoints at `http://localhost:8000/mcp`
+- Run in **stdio mode** for use with MCP clients like Claude Desktop and Cursor
+- Connect to Airflow at `http://localhost:8080` (default for `astro dev start`)
 
 The server provides a set of tools that AI assistants can use to interact with your Airflow instance through the REST API. No authentication is required by default, but you can configure it using environment variables or command-line flags (see [Configuration](#configuration)).
 
-**Custom configuration:**
+**Stdio mode (default)** - For MCP clients:
 
 ```bash
+# Default - runs in stdio mode
+astro-airflow-mcp
+
 # Airflow 3.x with username/password (OAuth2 token exchange)
 astro-airflow-mcp --airflow-url https://my-airflow.example.com --username admin --password admin
 
 # Airflow 2.x or 3.x with bearer token
 astro-airflow-mcp --airflow-url https://my-airflow.example.com --auth-token my_token
-
-# Use a different port
-astro-airflow-mcp --port 9000
-
-# Use stdio mode (for Claude Desktop)
-astro-airflow-mcp --transport stdio
 ```
+
+**HTTP mode** - For standalone server:
+
+```bash
+# Run as HTTP server on localhost:8000
+astro-airflow-mcp --transport http
+
+# Customize host and port
+astro-airflow-mcp --transport http --host 0.0.0.0 --port 9000
+```
+
+The HTTP mode exposes MCP protocol endpoints at `http://localhost:8000/mcp` and is useful for:
+- Testing with HTTP-based MCP clients
+- Running as a standalone service
+- Docker deployments (see `make docker-run`)
 
 ### Using with MCP Clients
 
 #### Claude Desktop
 
-Add to your Claude Desktop configuration:
+Claude Desktop uses stdio mode by default. Add to your Claude Desktop configuration:
 
 ```json
 {
@@ -122,21 +133,23 @@ Or with a bearer token:
 
 Configure in Cursor's MCP settings:
 
+**Stdio mode (default)**:
+
 ```json
 {
   "mcpServers": {
     "airflow": {
       "command": "astro-airflow-mcp",
-      "args": [
-        "--transport",
-        "stdio"
-      ]
+      "args": [],
+      "env": {
+        "AIRFLOW_API_URL": "http://localhost:8080"
+      }
     }
   }
 }
 ```
 
-**Or connect to the standalone server endpoint**:
+**Or connect to a standalone HTTP server**:
 
 ```json
 {
@@ -241,31 +254,29 @@ make pre-commit
 The easiest way to test the MCP server locally is with [Astro CLI](https://www.astronomer.io/docs/astro/cli/overview):
 
 ```bash
-# Start a local Airflow instance locally with an astro project (optional but recommended)
+# Start a local Airflow instance with an astro project (optional but recommended)
 astro dev start
 
-# In another terminal, run the MCP server
-# It will automatically connect to http://localhost:8080
+# In another terminal, run the MCP server in HTTP mode for testing
+# This uses HTTP mode explicitly for easier testing and debugging
 make run
 ```
 
-The default configuration (`http://localhost:8080`) matches Astro CLI's default Airflow webserver URL, so `make run` works out of the box with no additional configuration needed.
+The `make run` command uses HTTP mode on `http://localhost:8000` which is useful for local testing. The default configuration connects to `http://localhost:8080` which matches Astro CLI's default Airflow webserver URL.
 
 ## Configuration
 
-All tools use a global configuration that can be set via:
+All tools use a global configuration that can be set via command-line flags or environment variables:
 
-1. **Command-line flags** (standalone mode):
-   - `--airflow-url`: Airflow webserver URL
-   - `--auth-token`: Bearer token for authentication
-   - `--username`: Username for authentication (Airflow 3.x uses OAuth2 token exchange)
-   - `--password`: Password for authentication
-
-2. **Environment variables**:
-   - `AIRFLOW_API_URL`: Airflow webserver URL
-   - `AIRFLOW_AUTH_TOKEN`: Bearer token
-   - `AIRFLOW_USERNAME`: Username for authentication
-   - `AIRFLOW_PASSWORD`: Password for authentication
+| Flag | Environment Variable | Default | Description |
+|------|---------------------|---------|-------------|
+| `--transport` | `MCP_TRANSPORT` | `stdio` | Transport mode (`stdio` or `http`) |
+| `--host` | `MCP_HOST` | `localhost` | Host to bind to (HTTP mode only) |
+| `--port` | `MCP_PORT` | `8000` | Port to bind to (HTTP mode only) |
+| `--airflow-url` | `AIRFLOW_API_URL` | `http://localhost:8080` | Airflow webserver URL |
+| `--auth-token` | `AIRFLOW_AUTH_TOKEN` | `None` | Bearer token for authentication |
+| `--username` | `AIRFLOW_USERNAME` | `None` | Username for authentication (Airflow 3.x uses OAuth2 token exchange) |
+| `--password` | `AIRFLOW_PASSWORD` | `None` | Password for authentication |
 
 ## Architecture
 
