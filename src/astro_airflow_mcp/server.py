@@ -207,6 +207,7 @@ class AirflowConfig:
         self.url: str = DEFAULT_AIRFLOW_URL
         self.auth_token: str | None = None
         self.token_manager: AirflowTokenManager | None = None
+        self.project_dir: str | None = None
 
 
 _config = AirflowConfig()
@@ -247,6 +248,7 @@ def configure(
     auth_token: str | None = None,
     username: str | None = None,
     password: str | None = None,
+    project_dir: str | None = None,
 ) -> None:
     """Configure global Airflow connection settings.
 
@@ -255,6 +257,7 @@ def configure(
         auth_token: Direct bearer token for authentication (takes precedence)
         username: Username for token-based authentication
         password: Password for token-based authentication
+        project_dir: Project directory where Claude Code is running
 
     Note:
         If auth_token is provided, it will be used directly.
@@ -262,6 +265,8 @@ def configure(
         will be created to fetch and refresh tokens automatically.
         If neither is provided, credential-less token fetch will be attempted.
     """
+    if project_dir:
+        _config.project_dir = project_dir
     if url:
         _config.url = url
     if auth_token:
@@ -313,6 +318,15 @@ def _get_basic_auth() -> tuple[str, str] | None:
     if _config.token_manager:
         return _config.token_manager.get_basic_auth()
     return None
+
+
+def get_project_dir() -> str | None:
+    """Get the configured project directory.
+
+    Returns:
+        The project directory path, or None if not configured
+    """
+    return _config.project_dir
 
 
 def _invalidate_token() -> None:
