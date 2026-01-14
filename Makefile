@@ -16,7 +16,7 @@ install-dev:  ## Install the package with dev dependencies (local)
 	uv sync --all-extras
 
 install-dev-ci:  ## Install the package with dev dependencies (CI - system Python)
-	uv export --no-hashes --format requirements-txt --all-extras > /tmp/requirements.txt
+	uv export --no-hashes --format requirements-txt --all-extras --all-groups > /tmp/requirements.txt
 	uv pip install --system -r /tmp/requirements.txt
 	uv pip install --system -e .
 

@@ -3,11 +3,60 @@
 import argparse
 import logging
 import os
+from pathlib import Path
+
+import yaml
 
 from astro_airflow_mcp.logging import configure_logging, get_logger
 from astro_airflow_mcp.server import configure, mcp
 
 logger = get_logger("main")
+
+# Default Airflow URL if no config is found
+DEFAULT_AIRFLOW_URL = "http://localhost:8080"
+
+
+def discover_airflow_url(project_dir: str | None) -> str | None:
+    """Discover Airflow URL from .astro/config.yaml in the project directory.
+
+    Looks for the Astro CLI config file and extracts the webserver/api-server port.
+    Prefers api-server.port (Airflow 3.x) over webserver.port (Airflow 2.x).
+
+    Args:
+        project_dir: The project directory to search in
+
+    Returns:
+        The discovered Airflow URL (e.g., "http://localhost:8081"), or None if not found
+    """
+    if not project_dir:
+        return None
+
+    config_path = Path(project_dir) / ".astro" / "config.yaml"
+    if not config_path.exists():
+        return None
+
+    try:
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        if not config:
+            return None
+
+        # Try api-server.port first (Airflow 3.x), then webserver.port (Airflow 2.x)
+        port = None
+        if "api-server" in config and isinstance(config["api-server"], dict):
+            port = config["api-server"].get("port")
+        if port is None and "webserver" in config and isinstance(config["webserver"], dict):
+            port = config["webserver"].get("port")
+
+        if port:
+            return f"http://localhost:{port}"
+
+    except Exception as e:
+        # Log but don't fail - we'll fall back to default
+        logger.debug("Failed to read .astro/config.yaml: %s", e)
+
+    return None
 
 
 def main():
@@ -36,8 +85,8 @@ def main():
     parser.add_argument(
         "--airflow-url",
         type=str,
-        default=os.getenv("AIRFLOW_API_URL", "http://localhost:8080"),
-        help="Base URL of Airflow webserver (default: http://localhost:8080)",
+        default=os.getenv("AIRFLOW_API_URL"),  # None if not set
+        help="Base URL of Airflow webserver (auto-discovered from .astro/config.yaml if not provided)",
     )
     parser.add_argument(
         "--auth-token",
@@ -57,6 +106,12 @@ def main():
         default=os.getenv("AIRFLOW_PASSWORD"),
         help="Password for Airflow API token authentication",
     )
+    parser.add_argument(
+        "--airflow-project-dir",
+        type=str,
+        default=os.getenv("AIRFLOW_PROJECT_DIR") or os.getenv("PWD") or os.getcwd(),
+        help="Astro project directory for auto-discovering Airflow URL from .astro/config.yaml (default: $PWD)",
+    )
 
     args = parser.parse_args()
 
@@ -64,16 +119,30 @@ def main():
     stdio_mode = args.transport == "stdio"
     configure_logging(level=logging.INFO, stdio_mode=stdio_mode)
 
+    # Determine Airflow URL: explicit > auto-discover > default
+    airflow_url = args.airflow_url
+    url_source = "explicit"
+    if not airflow_url:
+        # Try auto-discovery from .astro/config.yaml
+        airflow_url = discover_airflow_url(args.airflow_project_dir)
+        if airflow_url:
+            url_source = "auto-discovered"
+        else:
+            airflow_url = DEFAULT_AIRFLOW_URL
+            url_source = "default"
+
     # Configure Airflow connection settings
     configure(
-        url=args.airflow_url,
+        url=airflow_url,
         auth_token=args.auth_token,
         username=args.username,
         password=args.password,
+        project_dir=args.airflow_project_dir,
     )
 
-    # Log Airflow connection configuration
-    logger.info("Airflow URL: %s", args.airflow_url)
+    # Log configuration
+    logger.info("Project directory: %s", args.airflow_project_dir)
+    logger.info("Airflow URL: %s (%s)", airflow_url, url_source)
     if args.auth_token:
         logger.info("Authentication: Direct bearer token")
     elif args.username:

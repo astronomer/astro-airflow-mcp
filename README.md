@@ -235,7 +235,8 @@ echo astro-airflow-mcp >> requirements.txt
 | `--transport` | `MCP_TRANSPORT` | `stdio` | Transport mode (`stdio` or `http`) |
 | `--host` | `MCP_HOST` | `localhost` | Host to bind to (HTTP mode only) |
 | `--port` | `MCP_PORT` | `8000` | Port to bind to (HTTP mode only) |
-| `--airflow-url` | `AIRFLOW_API_URL` | `http://localhost:8080` | Airflow webserver URL |
+| `--airflow-url` | `AIRFLOW_API_URL` | Auto-discovered or `http://localhost:8080` | Airflow webserver URL |
+| `--airflow-project-dir` | `AIRFLOW_PROJECT_DIR` | `$PWD` | Astro project directory for auto-discovering Airflow URL from `.astro/config.yaml` |
 | `--auth-token` | `AIRFLOW_AUTH_TOKEN` | `None` | Bearer token for authentication |
 | `--username` | `AIRFLOW_USERNAME` | `None` | Username for authentication (Airflow 3.x uses OAuth2 token exchange) |
 | `--password` | `AIRFLOW_PASSWORD` | `None` | Password for authentication |
