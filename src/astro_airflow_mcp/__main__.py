@@ -107,10 +107,10 @@ def main():
         help="Password for Airflow API token authentication",
     )
     parser.add_argument(
-        "--project-dir",
+        "--airflow-project-dir",
         type=str,
-        default=os.getenv("PROJECT_DIR") or os.getenv("PWD") or os.getcwd(),
-        help="Project directory where Claude Code is running (default: $PWD)",
+        default=os.getenv("AIRFLOW_PROJECT_DIR") or os.getenv("PWD") or os.getcwd(),
+        help="Astro project directory for auto-discovering Airflow URL from .astro/config.yaml (default: $PWD)",
     )
 
     args = parser.parse_args()
@@ -124,7 +124,7 @@ def main():
     url_source = "explicit"
     if not airflow_url:
         # Try auto-discovery from .astro/config.yaml
-        airflow_url = discover_airflow_url(args.project_dir)
+        airflow_url = discover_airflow_url(args.airflow_project_dir)
         if airflow_url:
             url_source = "auto-discovered"
         else:
@@ -137,11 +137,11 @@ def main():
         auth_token=args.auth_token,
         username=args.username,
         password=args.password,
-        project_dir=args.project_dir,
+        project_dir=args.airflow_project_dir,
     )
 
     # Log configuration
-    logger.info("Project directory: %s", args.project_dir)
+    logger.info("Project directory: %s", args.airflow_project_dir)
     logger.info("Airflow URL: %s (%s)", airflow_url, url_source)
     if args.auth_token:
         logger.info("Authentication: Direct bearer token")
