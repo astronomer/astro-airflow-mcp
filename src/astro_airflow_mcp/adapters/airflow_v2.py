@@ -179,6 +179,41 @@ class AirflowV2Adapter(AirflowAdapter):
                 "datasets", alternative="Datasets/Assets were added in Airflow 2.4"
             )
 
+    def list_asset_events(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        source_dag_id: str | None = None,
+        source_run_id: str | None = None,
+        source_task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """List dataset events (Airflow 2.x naming).
+
+        Normalizes field names for consistency with Airflow 3:
+        - 'dataset_events' -> 'asset_events'
+        """
+        try:
+            params: dict[str, Any] = {"limit": limit, "offset": offset}
+            if source_dag_id:
+                params["source_dag_id"] = source_dag_id
+            if source_run_id:
+                params["source_run_id"] = source_run_id
+            if source_task_id:
+                params["source_task_id"] = source_task_id
+
+            data = self._call("datasets/events", params=params)
+
+            # Normalize field names
+            if "dataset_events" in data:
+                data["asset_events"] = data.pop("dataset_events")
+
+            return data
+        except NotFoundError:
+            return self._handle_not_found(
+                "datasets/events",
+                alternative="Dataset events require Airflow 2.4+",
+            )
+
     def list_variables(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List Airflow variables."""
         return self._call("variables", params={"limit": limit, "offset": offset})

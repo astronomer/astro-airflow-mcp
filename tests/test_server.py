@@ -12,6 +12,7 @@ from astro_airflow_mcp.server import (
     _config,
     _get_auth_token,
     _get_dag_details_impl,
+    _list_asset_events_impl,
     _list_dags_impl,
     configure,
 )
@@ -94,6 +95,51 @@ class TestImplFunctions:
         assert result_data["total_dags"] == 0
         assert result_data["returned_count"] == 0
         assert result_data["dags"] == []
+
+    def test_list_asset_events_impl_success(self, mocker):
+        """Test _list_asset_events_impl with successful response."""
+        mock_response = {
+            "asset_events": [
+                {
+                    "asset_uri": "s3://bucket/path",
+                    "source_dag_id": "producer_dag",
+                    "source_run_id": "run_123",
+                    "timestamp": "2024-01-01T00:00:00Z",
+                },
+            ],
+            "total_entries": 1,
+        }
+        mock_adapter = mocker.Mock()
+        mock_adapter.list_asset_events.return_value = mock_response
+        mocker.patch("astro_airflow_mcp.server._get_adapter", return_value=mock_adapter)
+
+        result = _list_asset_events_impl(source_dag_id="producer_dag")
+        result_data = json.loads(result)
+
+        assert result_data["total_asset_events"] == 1
+        assert result_data["returned_count"] == 1
+        assert result_data["asset_events"][0]["source_dag_id"] == "producer_dag"
+        mock_adapter.list_asset_events.assert_called_once_with(
+            limit=100,
+            offset=0,
+            source_dag_id="producer_dag",
+            source_run_id=None,
+            source_task_id=None,
+        )
+
+    def test_list_asset_events_impl_empty(self, mocker):
+        """Test _list_asset_events_impl with no events."""
+        mock_response = {"asset_events": [], "total_entries": 0}
+        mock_adapter = mocker.Mock()
+        mock_adapter.list_asset_events.return_value = mock_response
+        mocker.patch("astro_airflow_mcp.server._get_adapter", return_value=mock_adapter)
+
+        result = _list_asset_events_impl()
+        result_data = json.loads(result)
+
+        assert result_data["total_asset_events"] == 0
+        assert result_data["returned_count"] == 0
+        assert result_data["asset_events"] == []
 
 
 class TestConfiguration:
