@@ -1397,6 +1397,83 @@ def list_assets() -> str:
     return _list_assets_impl()
 
 
+def _list_asset_events_impl(
+    limit: int = DEFAULT_LIMIT,
+    offset: int = DEFAULT_OFFSET,
+    source_dag_id: str | None = None,
+    source_run_id: str | None = None,
+    source_task_id: str | None = None,
+) -> str:
+    """Internal implementation for listing asset events from Airflow.
+
+    Args:
+        limit: Maximum number of events to return (default: 100)
+        offset: Offset for pagination (default: 0)
+        source_dag_id: Filter by DAG that produced the event
+        source_run_id: Filter by DAG run that produced the event
+        source_task_id: Filter by task that produced the event
+
+    Returns:
+        JSON string containing the list of asset events
+    """
+    try:
+        adapter = _get_adapter()
+        data = adapter.list_asset_events(
+            limit=limit,
+            offset=offset,
+            source_dag_id=source_dag_id,
+            source_run_id=source_run_id,
+            source_task_id=source_task_id,
+        )
+
+        if "asset_events" in data:
+            return _wrap_list_response(data["asset_events"], "asset_events", data)
+        return f"No asset events found. Response: {data}"
+    except Exception as e:
+        return str(e)
+
+
+@mcp.tool()
+def list_asset_events(
+    source_dag_id: str | None = None,
+    source_run_id: str | None = None,
+    limit: int = 100,
+) -> str:
+    """List asset/dataset events with optional filtering.
+
+    Use this tool when the user asks about:
+    - "What asset events were produced by DAG X?"
+    - "Show me dataset events from run Y"
+    - "Debug why downstream DAG wasn't triggered"
+    - "What assets did this pipeline produce?"
+    - "List recent asset update events"
+
+    Asset events are produced when a task updates an asset/dataset.
+    These events can trigger downstream DAGs that depend on those assets
+    (data-aware scheduling).
+
+    Returns event information including:
+    - asset_uri or dataset_uri: The asset that was updated
+    - source_dag_id: The DAG that produced this event
+    - source_run_id: The DAG run that produced this event
+    - source_task_id: The task that produced this event
+    - timestamp: When the event was created
+
+    Args:
+        source_dag_id: Filter events by the DAG that produced them
+        source_run_id: Filter events by the DAG run that produced them
+        limit: Maximum number of events to return (default: 100)
+
+    Returns:
+        JSON with list of asset events
+    """
+    return _list_asset_events_impl(
+        limit=limit,
+        source_dag_id=source_dag_id,
+        source_run_id=source_run_id,
+    )
+
+
 def _list_connections_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,

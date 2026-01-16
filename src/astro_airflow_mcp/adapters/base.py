@@ -321,6 +321,28 @@ class AirflowAdapter(ABC):
     def list_assets(self, limit: int = 100, offset: int = 0, **kwargs: Any) -> dict[str, Any]:
         """List assets/datasets."""
 
+    @abstractmethod
+    def list_asset_events(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        source_dag_id: str | None = None,
+        source_run_id: str | None = None,
+        source_task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """List asset/dataset events with optional filters.
+
+        Args:
+            limit: Maximum number of events to return
+            offset: Offset for pagination
+            source_dag_id: Filter by DAG that produced the event
+            source_run_id: Filter by DAG run that produced the event
+            source_task_id: Filter by task that produced the event
+
+        Returns:
+            Dict with 'asset_events' list (normalized key for both Airflow 2/3)
+        """
+
     # Variable Operations
     @abstractmethod
     def list_variables(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
