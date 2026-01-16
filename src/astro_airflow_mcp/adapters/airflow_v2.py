@@ -214,6 +214,30 @@ class AirflowV2Adapter(AirflowAdapter):
                 alternative="Dataset events require Airflow 2.4+",
             )
 
+    def get_dag_run_upstream_asset_events(
+        self,
+        dag_id: str,
+        dag_run_id: str,
+    ) -> dict[str, Any]:
+        """Get upstream dataset events that triggered a DAG run (Airflow 2.x).
+
+        Normalizes field names for consistency with Airflow 3:
+        - 'dataset_events' -> 'asset_events'
+        """
+        try:
+            data = self._call(f"dags/{dag_id}/dagRuns/{dag_run_id}/upstreamDatasetEvents")
+
+            # Normalize field names
+            if "dataset_events" in data:
+                data["asset_events"] = data.pop("dataset_events")
+
+            return data
+        except NotFoundError:
+            return self._handle_not_found(
+                "upstreamDatasetEvents",
+                alternative="This endpoint requires Airflow 2.4+ and a dataset-triggered run",
+            )
+
     def list_variables(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List Airflow variables."""
         return self._call("variables", params={"limit": limit, "offset": offset})

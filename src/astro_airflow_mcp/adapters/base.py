@@ -343,6 +343,25 @@ class AirflowAdapter(ABC):
             Dict with 'asset_events' list (normalized key for both Airflow 2/3)
         """
 
+    @abstractmethod
+    def get_dag_run_upstream_asset_events(
+        self,
+        dag_id: str,
+        dag_run_id: str,
+    ) -> dict[str, Any]:
+        """Get asset events that triggered a specific DAG run.
+
+        This is used to verify causation - which asset events caused this
+        DAG run to be scheduled (data-aware scheduling).
+
+        Args:
+            dag_id: The DAG ID
+            dag_run_id: The DAG run ID
+
+        Returns:
+            Dict with 'asset_events' list showing which events triggered this run
+        """
+
     # Variable Operations
     @abstractmethod
     def list_variables(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
