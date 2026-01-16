@@ -1474,6 +1474,78 @@ def list_asset_events(
     )
 
 
+def _get_upstream_asset_events_impl(
+    dag_id: str,
+    dag_run_id: str,
+) -> str:
+    """Internal implementation for getting upstream asset events for a DAG run.
+
+    Args:
+        dag_id: The DAG ID
+        dag_run_id: The DAG run ID
+
+    Returns:
+        JSON string containing the asset events that triggered this run
+    """
+    try:
+        adapter = _get_adapter()
+        data = adapter.get_dag_run_upstream_asset_events(dag_id, dag_run_id)
+
+        if "asset_events" in data:
+            return json.dumps(
+                {
+                    "dag_id": dag_id,
+                    "dag_run_id": dag_run_id,
+                    "triggered_by_events": data["asset_events"],
+                    "event_count": len(data["asset_events"]),
+                },
+                indent=2,
+            )
+        return json.dumps(data, indent=2)
+    except Exception as e:
+        return str(e)
+
+
+@mcp.tool()
+def get_upstream_asset_events(
+    dag_id: str,
+    dag_run_id: str,
+) -> str:
+    """Get asset events that triggered a specific DAG run.
+
+    Use this tool when the user asks about:
+    - "What triggered this DAG run?"
+    - "Which asset events caused this run to start?"
+    - "Why did DAG X start running?"
+    - "Show me the upstream triggers for this run"
+    - "What data changes triggered this pipeline run?"
+
+    This is useful for understanding causation in data-aware scheduling.
+    When a DAG is scheduled based on asset updates, this tool shows which
+    specific asset events triggered the run.
+
+    Returns information including:
+    - dag_id: The DAG that was triggered
+    - dag_run_id: The specific run
+    - triggered_by_events: List of asset events that caused this run
+    - event_count: Number of triggering events
+
+    Each event includes:
+    - asset_uri or dataset_uri: The asset that was updated
+    - source_dag_id: The DAG that produced the event
+    - source_run_id: The run that produced the event
+    - timestamp: When the event occurred
+
+    Args:
+        dag_id: The ID of the DAG
+        dag_run_id: The ID of the DAG run (e.g., "scheduled__2024-01-01T00:00:00+00:00")
+
+    Returns:
+        JSON with the asset events that triggered this DAG run
+    """
+    return _get_upstream_asset_events_impl(dag_id, dag_run_id)
+
+
 def _list_connections_impl(
     limit: int = DEFAULT_LIMIT,
     offset: int = DEFAULT_OFFSET,

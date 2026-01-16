@@ -203,6 +203,20 @@ class AirflowV3Adapter(AirflowAdapter):
                 alternative="Asset events require Airflow 3.0+",
             )
 
+    def get_dag_run_upstream_asset_events(
+        self,
+        dag_id: str,
+        dag_run_id: str,
+    ) -> dict[str, Any]:
+        """Get upstream asset events that triggered a DAG run (Airflow 3.x)."""
+        try:
+            return self._call(f"dags/{dag_id}/dagRuns/{dag_run_id}/upstreamAssetEvents")
+        except NotFoundError:
+            return self._handle_not_found(
+                "upstreamAssetEvents",
+                alternative="This endpoint requires an asset-triggered DAG run",
+            )
+
     def list_variables(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List Airflow variables."""
         return self._call("variables", params={"limit": limit, "offset": offset})
