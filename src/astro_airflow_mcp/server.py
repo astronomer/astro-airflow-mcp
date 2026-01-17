@@ -1437,6 +1437,7 @@ def _list_asset_events_impl(
 def list_asset_events(
     source_dag_id: str | None = None,
     source_run_id: str | None = None,
+    source_task_id: str | None = None,
     limit: int = 100,
 ) -> str:
     """List asset/dataset events with optional filtering.
@@ -1453,7 +1454,7 @@ def list_asset_events(
     (data-aware scheduling).
 
     Returns event information including:
-    - asset_uri or dataset_uri: The asset that was updated
+    - uri: The asset that was updated
     - source_dag_id: The DAG that produced this event
     - source_run_id: The DAG run that produced this event
     - source_task_id: The task that produced this event
@@ -1462,6 +1463,7 @@ def list_asset_events(
     Args:
         source_dag_id: Filter events by the DAG that produced them
         source_run_id: Filter events by the DAG run that produced them
+        source_task_id: Filter events by the task that produced them
         limit: Maximum number of events to return (default: 100)
 
     Returns:
@@ -1471,6 +1473,7 @@ def list_asset_events(
         limit=limit,
         source_dag_id=source_dag_id,
         source_run_id=source_run_id,
+        source_task_id=source_task_id,
     )
 
 
