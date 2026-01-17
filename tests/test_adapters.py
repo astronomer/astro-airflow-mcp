@@ -249,6 +249,8 @@ class TestAirflowV2Adapter:
         # Check normalization
         assert "asset_events" in result
         assert "dataset_events" not in result
+        assert "uri" in result["asset_events"][0]
+        assert "dataset_uri" not in result["asset_events"][0]
         assert result["asset_events"][0]["source_dag_id"] == "producer_dag"
 
         # Verify endpoint and params
@@ -288,6 +290,8 @@ class TestAirflowV2Adapter:
         # Check normalization
         assert "asset_events" in result
         assert "dataset_events" not in result
+        assert "uri" in result["asset_events"][0]
+        assert "dataset_uri" not in result["asset_events"][0]
         assert result["asset_events"][0]["source_dag_id"] == "upstream_dag"
 
         # Verify endpoint

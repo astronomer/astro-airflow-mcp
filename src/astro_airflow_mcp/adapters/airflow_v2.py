@@ -191,6 +191,8 @@ class AirflowV2Adapter(AirflowAdapter):
 
         Normalizes field names for consistency with Airflow 3:
         - 'dataset_events' -> 'asset_events'
+        - 'dataset_uri' -> 'uri'
+        - 'dataset_id' -> 'asset_id'
         """
         try:
             params: dict[str, Any] = {"limit": limit, "offset": offset}
@@ -206,6 +208,11 @@ class AirflowV2Adapter(AirflowAdapter):
             # Normalize field names
             if "dataset_events" in data:
                 data["asset_events"] = data.pop("dataset_events")
+                for event in data.get("asset_events", []):
+                    if "dataset_uri" in event:
+                        event["uri"] = event.pop("dataset_uri")
+                    if "dataset_id" in event:
+                        event["asset_id"] = event.pop("dataset_id")
 
             return data
         except NotFoundError:
@@ -223,6 +230,8 @@ class AirflowV2Adapter(AirflowAdapter):
 
         Normalizes field names for consistency with Airflow 3:
         - 'dataset_events' -> 'asset_events'
+        - 'dataset_uri' -> 'uri'
+        - 'dataset_id' -> 'asset_id'
         """
         try:
             data = self._call(f"dags/{dag_id}/dagRuns/{dag_run_id}/upstreamDatasetEvents")
@@ -230,6 +239,11 @@ class AirflowV2Adapter(AirflowAdapter):
             # Normalize field names
             if "dataset_events" in data:
                 data["asset_events"] = data.pop("dataset_events")
+                for event in data.get("asset_events", []):
+                    if "dataset_uri" in event:
+                        event["uri"] = event.pop("dataset_uri")
+                    if "dataset_id" in event:
+                        event["asset_id"] = event.pop("dataset_id")
 
             return data
         except NotFoundError:
