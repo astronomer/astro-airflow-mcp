@@ -178,6 +178,45 @@ class AirflowV3Adapter(AirflowAdapter):
                 "assets", alternative="Try 'datasets' endpoint if using older Airflow 3.x"
             )
 
+    def list_asset_events(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        source_dag_id: str | None = None,
+        source_run_id: str | None = None,
+        source_task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """List asset events (Airflow 3.x)."""
+        try:
+            params: dict[str, Any] = {"limit": limit, "offset": offset}
+            if source_dag_id:
+                params["source_dag_id"] = source_dag_id
+            if source_run_id:
+                params["source_run_id"] = source_run_id
+            if source_task_id:
+                params["source_task_id"] = source_task_id
+
+            return self._call("assets/events", params=params)
+        except NotFoundError:
+            return self._handle_not_found(
+                "assets/events",
+                alternative="Asset events require Airflow 3.0+",
+            )
+
+    def get_dag_run_upstream_asset_events(
+        self,
+        dag_id: str,
+        dag_run_id: str,
+    ) -> dict[str, Any]:
+        """Get upstream asset events that triggered a DAG run (Airflow 3.x)."""
+        try:
+            return self._call(f"dags/{dag_id}/dagRuns/{dag_run_id}/upstreamAssetEvents")
+        except NotFoundError:
+            return self._handle_not_found(
+                "upstreamAssetEvents",
+                alternative="This endpoint requires an asset-triggered DAG run",
+            )
+
     def list_variables(self, limit: int = 100, offset: int = 0) -> dict[str, Any]:
         """List Airflow variables."""
         return self._call("variables", params={"limit": limit, "offset": offset})
