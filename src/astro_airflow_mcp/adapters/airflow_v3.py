@@ -186,7 +186,11 @@ class AirflowV3Adapter(AirflowAdapter):
         source_run_id: str | None = None,
         source_task_id: str | None = None,
     ) -> dict[str, Any]:
-        """List asset events (Airflow 3.x)."""
+        """List asset events (Airflow 3.x).
+
+        Normalizes field names for consistency:
+        - 'asset_uri' -> 'uri'
+        """
         try:
             params: dict[str, Any] = {"limit": limit, "offset": offset}
             if source_dag_id:
@@ -196,7 +200,15 @@ class AirflowV3Adapter(AirflowAdapter):
             if source_task_id:
                 params["source_task_id"] = source_task_id
 
-            return self._call("assets/events", params=params)
+            data = self._call("assets/events", params=params)
+
+            # Normalize field names
+            if "asset_events" in data:
+                for event in data.get("asset_events", []):
+                    if "asset_uri" in event:
+                        event["uri"] = event.pop("asset_uri")
+
+            return data
         except NotFoundError:
             return self._handle_not_found(
                 "assets/events",
@@ -208,9 +220,21 @@ class AirflowV3Adapter(AirflowAdapter):
         dag_id: str,
         dag_run_id: str,
     ) -> dict[str, Any]:
-        """Get upstream asset events that triggered a DAG run (Airflow 3.x)."""
+        """Get upstream asset events that triggered a DAG run (Airflow 3.x).
+
+        Normalizes field names for consistency:
+        - 'asset_uri' -> 'uri'
+        """
         try:
-            return self._call(f"dags/{dag_id}/dagRuns/{dag_run_id}/upstreamAssetEvents")
+            data = self._call(f"dags/{dag_id}/dagRuns/{dag_run_id}/upstreamAssetEvents")
+
+            # Normalize field names
+            if "asset_events" in data:
+                for event in data.get("asset_events", []):
+                    if "asset_uri" in event:
+                        event["uri"] = event.pop("asset_uri")
+
+            return data
         except NotFoundError:
             return self._handle_not_found(
                 "upstreamAssetEvents",

@@ -361,8 +361,8 @@ class TestAirflowV3Adapter:
         assert call_kwargs["params"]["tags"] == ["production"]
         assert call_kwargs["params"]["only_active"] is True
 
-    def test_list_asset_events(self, mocker):
-        """Test V3 adapter calls assets/events endpoint."""
+    def test_list_asset_events_normalizes_field_names(self, mocker):
+        """Test V3 adapter normalizes asset_uri to uri."""
         adapter = AirflowV3Adapter(
             "http://localhost:8080",
             "3.0.0",
@@ -395,7 +395,10 @@ class TestAirflowV3Adapter:
             source_run_id="run_123",
         )
 
+        # Check normalization
         assert "asset_events" in result
+        assert "uri" in result["asset_events"][0]
+        assert "asset_uri" not in result["asset_events"][0]
         assert result["asset_events"][0]["source_dag_id"] == "producer_dag"
 
         # Verify endpoint and params
@@ -404,8 +407,8 @@ class TestAirflowV3Adapter:
         assert call_args[1]["params"]["source_dag_id"] == "producer_dag"
         assert call_args[1]["params"]["source_run_id"] == "run_123"
 
-    def test_get_dag_run_upstream_asset_events(self, mocker):
-        """Test V3 adapter calls upstreamAssetEvents endpoint."""
+    def test_get_dag_run_upstream_asset_events_normalizes_field_names(self, mocker):
+        """Test V3 adapter normalizes asset_uri to uri for upstream events."""
         adapter = AirflowV3Adapter(
             "http://localhost:8080",
             "3.0.0",
@@ -433,7 +436,10 @@ class TestAirflowV3Adapter:
 
         result = adapter.get_dag_run_upstream_asset_events("consumer_dag", "run_123")
 
+        # Check normalization
         assert "asset_events" in result
+        assert "uri" in result["asset_events"][0]
+        assert "asset_uri" not in result["asset_events"][0]
         assert result["asset_events"][0]["source_dag_id"] == "upstream_dag"
 
         # Verify endpoint
